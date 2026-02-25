@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: .
+    container_name: tb_frontend
+    ports:
+      - "5175:5175" # Vite frontend uchun
+    environment:
+      - VITE_API_BASE_URL=http://192.168.2.72:3000 # API manzili
+    networks:
+      - my_network
+
+networks:
+  my_network:
+    driver: bridge
