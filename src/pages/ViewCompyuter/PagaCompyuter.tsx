@@ -5,7 +5,6 @@ import { Tabs } from 'flowbite-react';
 import ViewCompyuter from "./ViewCompyuter.tsx";
 import ViewPO from "./ViewPO.tsx";
 import {FaLongArrowAltLeft} from "react-icons/fa";
-import {GrAddCircle} from "react-icons/gr";
 
 
 
@@ -53,10 +52,7 @@ const PageCompyuter = () => {
                 < FaLongArrowAltLeft className='text-xl' />
                 Назад
               </Link>
-              <Link to={`/add-item/${slug}`} type='submit' className="flex items-center justify-center gap-2 rounded-md bg-meta-3 py-2 px-3 text-center font-medium text-white hover:bg-opacity-90 lg:px-5 xl:px-7" >
-                <GrAddCircle className='text-xl' />
-                Добавить
-              </Link>
+              <div />
 
             </div>
           </div>

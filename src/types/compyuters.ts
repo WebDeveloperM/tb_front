@@ -109,6 +109,11 @@ export type InfoComputerData = {
     all_active_employee_count: number,
     due_spez_item_count?: number,
     due_product_counts?: Record<string, number>,
+    due_products?: Array<{
+        id: number,
+        name: string,
+        due_count: number,
+    }>,
     all_compyuters_count?: number,
     all_worked_compyuters_count?: number,
 };

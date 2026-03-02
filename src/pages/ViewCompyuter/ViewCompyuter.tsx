@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BASE_URL } from '../../utils/urls';
+import { BASE_IMAGE_URL, BASE_URL } from '../../utils/urls';
 import Skeleton from '../../components/Skeleton/Skeleton';
 import axioss from '../../api/axios';
 import { isAuthenticated } from '../../utils/auth';
@@ -29,6 +29,7 @@ type ItemDetail = {
     last_name?: string;
     surname?: string;
     tabel_number?: string;
+    base_image?: string | null;
     position?: string;
     clothe_size?: string;
     shoe_size?: string;
@@ -49,6 +50,7 @@ const ViewCompyuter = () => {
   const { slug } = useParams();
 
   const [data, setData] = useState<ItemDetail | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const formatDate = (value?: string | null) => {
     if (!value) return '-';
@@ -59,6 +61,16 @@ const ViewCompyuter = () => {
     const year = date.getFullYear();
     return `${day}.${month}.${year}`;
   };
+
+  const resolveImageUrl = (value?: string | null) => {
+    if (!value) return '';
+    if (String(value).startsWith('http://') || String(value).startsWith('https://')) {
+      return String(value);
+    }
+    return `${BASE_IMAGE_URL}${value}`;
+  };
+
+  const employeeBaseImageUrl = resolveImageUrl(data?.employee?.base_image);
 
   useEffect(() => {
     if (!slug) return;
@@ -84,52 +96,74 @@ const ViewCompyuter = () => {
               <div>
                 <h1 className="p-5 pt-5 pb-3 font-semibold">Сотрудник</h1>
                 <div className="p-5 py-3 pb-5 border-b mb-2">
-                  <div className="grid sm:grid-cols-12 gap-4">
-                    <ModalDataInput
-                      label="Фамилия"
-                      inputData={data.employee?.last_name || '-'}
-                      wrapperClassName="col-span-2"
-                    />
-                    <ModalDataInput
-                      label="Имя"
-                      inputData={data.employee?.first_name || '-'}
-                      wrapperClassName="col-span-2"
-                    />
-                    <ModalDataInput
-                      label="Отчество"
-                      inputData={data.employee?.surname || '-'}
-                      wrapperClassName="col-span-2"
-                    />
-                    <ModalDataInput
-                      label="Табельный номер"
-                      inputData={data.employee?.tabel_number || '-'}
-                      wrapperClassName="col-span-2"
-                    />
-                    <ModalDataInput
-                      label="Должность"
-                      inputData={data.employee?.position || '-'}
-                      multiline
-                      rows={1}
-                      wrapperClassName="col-span-4"
-                    />
-                  </div>
+                  <div className="flex items-start gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="grid sm:grid-cols-12 gap-4">
+                        <ModalDataInput
+                          label="Фамилия"
+                          inputData={data.employee?.last_name || '-'}
+                          wrapperClassName="col-span-3"
+                        />
+                        <ModalDataInput
+                          label="Имя"
+                          inputData={data.employee?.first_name || '-'}
+                          wrapperClassName="col-span-3"
+                        />
+                        <ModalDataInput
+                          label="Отчество"
+                          inputData={data.employee?.surname || '-'}
+                          wrapperClassName="col-span-3"
+                        />
+                        <ModalDataInput
+                          label="Табельный номер"
+                          inputData={data.employee?.tabel_number || '-'}
+                          wrapperClassName="col-span-3"
+                        />
+                        <ModalDataInput
+                          label="Должность"
+                          inputData={data.employee?.position || '-'}
+                          multiline
+                          rows={1}
+                          wrapperClassName="col-span-6"
+                        />
+                        <ModalDataInput
+                          label="Цех"
+                          inputData={data.employee?.department?.name || '-'}
+                          wrapperClassName="col-span-3"
+                        />
+                        <ModalDataInput
+                          label="Отдел"
+                          inputData={data.employee?.section?.name || '-'}
+                          wrapperClassName="col-span-3"
+                        />
+                        <ModalDataInput
+                          label="Руководитель цеха"
+                          inputData={data.employee?.department?.boss_fullName || '-'}
+                          wrapperClassName="col-span-6"
+                        />
+                      </div>
+                    </div>
 
-                  <div className="grid sm:grid-cols-12 gap-3 mt-4">
-                    <ModalDataInput
-                      label="Цех"
-                      inputData={data.employee?.department?.name || '-'}
-                      wrapperClassName="col-span-3"
-                    />
-                    <ModalDataInput
-                      label="Отдел"
-                      inputData={data.employee?.section?.name || '-'}
-                      wrapperClassName="col-span-3"
-                    />
-                    <ModalDataInput
-                      label="Руководитель цеха"
-                      inputData={data.employee?.department?.boss_fullName || '-'}
-                      wrapperClassName="col-span-3"
-                    />
+                    <div className="shrink-0 self-start">
+                      <label className="mb-2 block text-black dark:text-white">Базовое фото сотрудника</label>
+                      {employeeBaseImageUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImage(employeeBaseImageUrl)}
+                          className="h-40 w-48 rounded border bg-black/5 p-1"
+                        >
+                          <img
+                            src={employeeBaseImageUrl}
+                            alt="employee_base_image"
+                            className="h-full w-full rounded object-cover bg-black"
+                          />
+                        </button>
+                      ) : (
+                        <div className="w-48 rounded border border-dashed px-4 py-3 text-sm text-gray-500">
+                          Базовое фото отсутствует
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -202,6 +236,39 @@ const ViewCompyuter = () => {
                 </div>
               </div>
             )}
+
+            {previewImage ? (
+              <div
+                className="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 p-4"
+                onClick={(event) => {
+                  if (event.target === event.currentTarget) {
+                    setPreviewImage(null);
+                  }
+                }}
+              >
+                <div className="w-full max-w-2xl rounded-md bg-white p-4 shadow-xl dark:bg-boxdark">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Базовое фото сотрудника</h3>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImage(null)}
+                      className="flex h-6 w-6 items-center justify-center rounded border text-sm leading-none hover:bg-slate-50 dark:hover:bg-boxdark-2"
+                      aria-label="Close preview"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="rounded border p-2">
+                    <img
+                      src={previewImage}
+                      alt="preview_base_image"
+                      className="max-h-[75vh] w-full rounded object-contain"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 

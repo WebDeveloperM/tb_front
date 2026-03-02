@@ -7,19 +7,26 @@ import { BASE_URL } from "../../utils/urls";
 
 import { FiAlertTriangle } from "react-icons/fi";
 import axioss from "../../api/axios";
+import { toast } from "react-toastify";
 
 type Props = {
     openDeleteModal: boolean,
     setDeleteOpenModal: (value: boolean) => void,
     deleteModalData: string,
     setDeleteCompData: React.Dispatch<React.SetStateAction<boolean>>,
+    canDelete: boolean,
 }
 
-export function ModalDeleteComponent({ openDeleteModal, setDeleteOpenModal, deleteModalData, setDeleteCompData }: Props) {
+export function ModalDeleteComponent({ openDeleteModal, setDeleteOpenModal, deleteModalData, setDeleteCompData, canDelete }: Props) {
 
     const [loading, setLoading] = useState(false);
 
     const handleDelete = () => {
+        if (!canDelete) {
+            toast.warning("Вы не администратор. У вас нет прав на удаление.");
+            return;
+        }
+
         setLoading(true);
         axioss
             .delete(`${BASE_URL}/item-delete/${deleteModalData}`)
@@ -30,6 +37,13 @@ export function ModalDeleteComponent({ openDeleteModal, setDeleteOpenModal, dele
             })
             .catch((err) => {
                 setLoading(false);
+                const backendMessage = err?.response?.data?.error;
+                if (err?.response?.status === 403) {
+                    toast.warning(backendMessage || "У вас нет прав на удаление.");
+                    setDeleteOpenModal(false);
+                    return;
+                }
+                toast.error("Удаление не выполнено");
                 console.error("Error deleting:", err);
             });
     };

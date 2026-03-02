@@ -21,6 +21,8 @@ const MainTable = () => {
   const [openDeleteModal, setDeleteOpenModal] = useState(false);
   const [deleteModalData, setDeleteModalData] = useState("");
   const [deleteCompData, setDeleteCompData] = useState(false);
+  const role = String(localStorage.getItem('role') || '').trim().toLowerCase();
+  const canDelete = localStorage.getItem('can_delete') === 'true' || role === 'admin' || role === 'админ';
 
   useEffect(() => {
     axioss
@@ -177,7 +179,7 @@ const MainTable = () => {
 
       <ModalComponent openModal={openModal} setOpenModal={setOpenModal} modalData={modalData} />
 
-      <ModalDeleteComponent openDeleteModal={openDeleteModal} setDeleteOpenModal={setDeleteOpenModal} deleteModalData={deleteModalData} setDeleteCompData={setDeleteCompData} />
+      <ModalDeleteComponent openDeleteModal={openDeleteModal} setDeleteOpenModal={setDeleteOpenModal} deleteModalData={deleteModalData} setDeleteCompData={setDeleteCompData} canDelete={canDelete} />
 
 
     </div>

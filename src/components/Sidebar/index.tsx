@@ -208,48 +208,58 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
                   {sidebarOpen && 'Главная страница'}
                 </NavLink>
               </li>
-              {/* <!-- Menu Item Calendar --> */}
-
-
-              
-              {/* <!-- Menu Item Tables --> */}
               <li>
                 <NavLink
-                  to="/add-compyuter"
-                  className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('tables') && 'bg-graydark dark:bg-meta-4'
+                  to="/ppe-arrival"
+                  className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('/ppe-arrival') &&
+                    'bg-graydark dark:bg-meta-4'
+                    }`}
+                >
+                  <svg className="fill-current" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M9 1.5C9.41421 1.5 9.75 1.83579 9.75 2.25V8.25H15.75C16.1642 8.25 16.5 8.58579 16.5 9C16.5 9.41421 16.1642 9.75 15.75 9.75H9.75V15.75C9.75 16.1642 9.41421 16.5 9 16.5C8.58579 16.5 8.25 16.1642 8.25 15.75V9.75H2.25C1.83579 9.75 1.5 9.41421 1.5 9C1.5 8.58579 1.83579 8.25 2.25 8.25H8.25V2.25C8.25 1.83579 8.58579 1.5 9 1.5Z" fill=""/>
+                  </svg>
+                  {sidebarOpen && 'Прием СИЗ'}
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/statistics"
+                  className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('/statistics') &&
+                    'bg-graydark dark:bg-meta-4'
                     }`}
                 >
                   <svg
                     className="fill-current"
                     width="18"
-                    height="19"
-                    viewBox="0 0 18 19"
+                    height="18"
+                    viewBox="0 0 18 18"
                     fill="none"
                     xmlns="http://www.w3.org/2000/svg"
                   >
-                    <g clipPath="url(#clip0_130_9756)">
-                      <path
-                        d="M15.7501 0.55835H2.2501C1.29385 0.55835 0.506348 1.34585 0.506348 2.3021V15.8021C0.506348 16.7584 1.29385 17.574 2.27822 17.574H15.7782C16.7345 17.574 17.5501 16.7865 17.5501 15.8021V2.3021C17.522 1.34585 16.7063 0.55835 15.7501 0.55835ZM6.69385 10.599V6.4646H11.3063V10.5709H6.69385V10.599ZM11.3063 11.8646V16.3083H6.69385V11.8646H11.3063ZM1.77197 6.4646H5.45635V10.5709H1.77197V6.4646ZM12.572 6.4646H16.2563V10.5709H12.572V6.4646ZM2.2501 1.82397H15.7501C16.0313 1.82397 16.2563 2.04897 16.2563 2.33022V5.2271H1.77197V2.3021C1.77197 2.02085 1.96885 1.82397 2.2501 1.82397ZM1.77197 15.8021V11.8646H5.45635V16.3083H2.2501C1.96885 16.3083 1.77197 16.0834 1.77197 15.8021ZM15.7501 16.3083H12.572V11.8646H16.2563V15.8021C16.2563 16.0834 16.0313 16.3083 15.7501 16.3083Z"
-                        fill=""
-                      />
-                    </g>
-                    <defs>
-                      <clipPath id="clip0_130_9756">
-                        <rect
-                          width="18"
-                          height="18"
-                          fill="white"
-                          transform="translate(0 0.052124)"
-                        />
-                      </clipPath>
-                    </defs>
+                    <path
+                      d="M2.25 15.75C1.83579 15.75 1.5 15.4142 1.5 15V3C1.5 2.58579 1.83579 2.25 2.25 2.25C2.66421 2.25 3 2.58579 3 3V15C3 15.4142 2.66421 15.75 2.25 15.75Z"
+                      fill=""
+                    />
+                    <path
+                      d="M7.125 15.75C6.71079 15.75 6.375 15.4142 6.375 15V9C6.375 8.58579 6.71079 8.25 7.125 8.25C7.53921 8.25 7.875 8.58579 7.875 9V15C7.875 15.4142 7.53921 15.75 7.125 15.75Z"
+                      fill=""
+                    />
+                    <path
+                      d="M12 15.75C11.5858 15.75 11.25 15.4142 11.25 15V6C11.25 5.58579 11.5858 5.25 12 5.25C12.4142 5.25 12.75 5.58579 12.75 6V15C12.75 15.4142 12.4142 15.75 12 15.75Z"
+                      fill=""
+                    />
+                    <path
+                      d="M16.875 15.75C16.4608 15.75 16.125 15.4142 16.125 15V11.25C16.125 10.8358 16.4608 10.5 16.875 10.5C17.2892 10.5 17.625 10.8358 17.625 11.25V15C17.625 15.4142 17.2892 15.75 16.875 15.75Z"
+                      fill=""
+                    />
                   </svg>
-                  {sidebarOpen && 'Добавить'}
+                  {sidebarOpen && 'Статистика'}
                 </NavLink>
               </li>
-              {/* <!-- Menu Item Tables --> */}
+              {/* <!-- Menu Item Calendar --> */}
 
 
+              
             </ul>
           </div>
 

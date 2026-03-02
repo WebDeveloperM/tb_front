@@ -1,130 +1,187 @@
 import { Compyuter } from '../types/compyuters';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 export const exportToExcel = (data: Compyuter[], filename: string = 'computers') => {
-  // Проверяем, что данные существуют и не пустые
   if (!data || data.length === 0) {
     throw new Error('Нет данных для экспорта');
   }
 
-  // Создаем заголовки для Excel
-  const headers = [
+  const formatProductCell = (product: any) => {
+    const name = String(product?.name || '').trim();
+    const size = String(product?.size || '').trim();
+    if (!name) return '';
+    return size ? `${name} (${size})` : name;
+  };
+
+  const formatDate = (value: unknown) => {
+    if (!value) return '—';
+    const parsed = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(parsed.getTime())) return String(value);
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const year = parsed.getFullYear();
+    return `${day}.${month}.${year}`;
+  };
+
+  const buildIssueCells = (item: any) => {
+    const issueHistory = Array.isArray(item?.issue_history) ? item.issue_history : [];
+
+    if (issueHistory.length > 0) {
+      const orderedIssues = [...issueHistory].reverse();
+      return orderedIssues.map((issue: any) => {
+        const products = Array.isArray(issue?.ppeproduct_info) ? issue.ppeproduct_info : [];
+        const productText = products
+          .map((product: any) => formatProductCell(product))
+          .filter(Boolean)
+          .join(', ');
+
+        const issueDate = issue?.issued_at ? formatDate(issue.issued_at) : '';
+        if (!issueDate) return productText;
+        if (!productText) return issueDate;
+        return `${issueDate} — ${productText}`;
+      });
+    }
+
+    const currentProducts = Array.isArray(item?.ppeproduct_info) ? item.ppeproduct_info : [];
+    const currentIssueText = currentProducts
+      .map((product: any) => formatProductCell(product))
+      .filter(Boolean)
+      .join(', ');
+
+    const currentIssueDate = item?.issued_at ? formatDate(item.issued_at) : '';
+    const currentIssueCell = currentIssueDate
+      ? (currentIssueText ? `${currentIssueDate} — ${currentIssueText}` : currentIssueDate)
+      : currentIssueText;
+
+    return currentIssueCell ? [currentIssueCell] : [];
+  };
+
+  const maxIssueCount = data.reduce((max, item) => {
+    const issueCells = buildIssueCells(item as any).filter(Boolean);
+    return Math.max(max, issueCells.length);
+  }, 0);
+
+  const baseHeaders = [
     '№',
-    'Цехы',
+    'Фамилия',
+    'Имя',
+    'Отчество',
+    'Табельный номер',
+    'Должность',
+    'Цех',
     'Отдел',
-    'Пользователь',
-    'Тип орг.техники',
-    'IP адрес',
-    'MAC адрес',
-    'Номер пломбы',
-    'Зав. склада',
-    'Материнская плата',
-    'Модель МП',
-    'Процессор',
-    'Поколение',
-    'Частота',
-    'HDD',
-    'SSD',
-    'Тип диска',
-    'Тип RAM',
-    'Размер RAM',
-    'Видеокарта',
-    'Операционная система',
-    'Интернет',
-    'Активен',
-    'Дата добавления',
-    'Дата изменения',
-    'Пользователь изменения',
-    'Принтеры',
-    'Сканеры',
-    'МФУ',
-    'Веб-камеры',
-    'Модели веб-камер',
-    'Типы мониторов'
+    'Руководитель цеха',
+    'Рост',
+    'Размер одежды',
+    'Размер обуви',
+    'Размер головного убора',
+    'Дата приема на работу',
+    'Дата последнего изменения должности',
+    'Выдал',
+    'Дата выдачи',
   ];
 
-  // Подготавливаем данные для экспорта
-  const excelRows = data.map((item, index) => [
-    index + 1,
-    item.departament?.name || '',
-    item.section?.name || '',
-    item.user || '',
-    item.type_compyuter?.name || '',
-    item.ipadresss || '',
-    item.mac_adress || '',
-    item.seal_number || '',
-    item.warehouse_manager?.name || '',
-    item.motherboard?.name || '',
-    item.motherboard_model?.name || '',
-    item.CPU?.name || '',
-    item.generation?.name || '',
-    item.frequency?.name || '',
-    item.HDD?.name || '',
-    item.SSD?.name || '',
-    item.disk_type?.name || '',
-    item.RAM_type?.name || '',
-    item.RAMSize?.name || '',
-    item.GPU?.name || '',
-    item.OS || '',
-    item.internet ? 'Да' : 'Нет',
-    item.isActive ? 'Да' : 'Нет',
-    item.joinDate ? new Date(item.joinDate).toLocaleDateString('ru-RU') : '',
-    item.history_date ? new Date(item.history_date).toLocaleString('ru-RU') : '',
-    item.history_user || '',
-    item.printer?.map(p => p.name).join(', ') || '',
-    item.scaner?.map(s => s.name).join(', ') || '',
-    item.mfo?.map(m => m.name).join(', ') || '',
-    item.type_webcamera?.map(w => w.name).join(', ') || '',
-    item.model_webcam?.map(m => m.name).join(', ') || '',
-    item.type_monitor?.map(t => t.name).join(', ') || ''
-  ]);
+  const issueHeaders = Array.from({length: maxIssueCount}, (_, idx) => `Выдача #${idx + 1}`);
+  const headers = [...baseHeaders, ...issueHeaders];
 
-  try {
-    // 1. Создаем рабочий лист
-    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...excelRows]);
+  const excelRows = data.map((item, index) => {
+    const issues = buildIssueCells(item as any).filter(Boolean);
 
-    // 2. Настраиваем ширину столбцов (в символах)
-    worksheet['!cols'] = [
-      { wch: 5 },  // №
-      { wch: 15 }, // Цехы
-      { wch: 25 }, // Отдел
-      { wch: 25 }, // Пользователь
-      { wch: 15 }, // Тип орг.техники
-      { wch: 15 }, // IP адрес
-      { wch: 18 }, // MAC адрес
-      { wch: 15 }, // Номер пломбы
-      { wch: 20 }, // Зав. склада
-      { wch: 20 }, // Материнская плата
-      { wch: 20 }, // Модель МП
-      { wch: 20 }, // Процессор
-      { wch: 12 }, // Поколение
-      { wch: 12 }, // Частота
-      { wch: 10 }, // HDD
-      { wch: 10 }, // SSD
-      { wch: 12 }, // Тип диска
-      { wch: 12 }, // Тип RAM
-      { wch: 12 }, // Размер RAM
-      { wch: 20 }, // Видеокарта
-      { wch: 25 }, // Операционная система
-      { wch: 10 }, // Интернет
-      { wch: 10 }, // Активен
-      { wch: 15 }, // Дата добавления
-      { wch: 20 }, // Дата изменения
-      { wch: 20 }, // Пользователь изменения
-      { wch: 20 }, // Принтеры
-      { wch: 20 }, // Сканеры
-      { wch: 20 }, // МФУ
-      { wch: 20 }, // Веб-камеры
-      { wch: 20 }, // Модели веб-камер
-      { wch: 20 }  // Типы мониторов
+    const paddedProducts = [
+      ...issues,
+      ...Array.from({length: Math.max(0, maxIssueCount - issues.length)}, () => ''),
     ];
 
-    // 3. Создаем книгу и добавляем в нее лист
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Computers');
+    return [
+      index + 1,
+      (item as any)?.employee?.last_name || '',
+      (item as any)?.employee?.first_name || '',
+      (item as any)?.employee?.surname || '',
+      (item as any)?.employee?.tabel_number || '',
+      (item as any)?.employee?.position || '',
+      (item as any)?.employee?.department?.name || '',
+      (item as any)?.employee?.section?.name || '',
+      (item as any)?.employee?.department?.boss_fullName || '',
+      (item as any)?.employee?.height || '',
+      (item as any)?.employee?.clothe_size || '',
+      (item as any)?.employee?.shoe_size || '',
+      (item as any)?.employee?.headdress_size || '',
+      formatDate((item as any)?.employee?.date_of_employment),
+      formatDate((item as any)?.employee?.date_of_change_position),
+      (item as any)?.issued_by_info?.full_name || (item as any)?.issued_by_info?.username || '',
+      formatDate((item as any)?.issued_at),
+      ...paddedProducts,
+    ];
+  });
 
-    // 4. Генерируем файл и скачиваем его
-    // XLSX.writeFile автоматически инициирует скачивание в браузере
+  try {
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...excelRows]);
+
+    const baseCols = [
+      { wch: 5 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 20 },
+      { wch: 16 },
+      { wch: 30 },
+      { wch: 24 },
+      { wch: 20 },
+      { wch: 28 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 24 },
+      { wch: 16 },
+    ];
+
+    const issueCols = Array.from({length: maxIssueCount}, () => ({wch: 24}));
+    worksheet['!cols'] = [...baseCols, ...issueCols];
+
+    const baseCellStyle = {
+      border: {
+        top: { style: 'thin', color: { rgb: 'BFBFBF' } },
+        bottom: { style: 'thin', color: { rgb: 'BFBFBF' } },
+        left: { style: 'thin', color: { rgb: 'BFBFBF' } },
+        right: { style: 'thin', color: { rgb: 'BFBFBF' } },
+      },
+      alignment: {
+        horizontal: 'center',
+        vertical: 'center',
+        wrapText: true,
+      },
+    };
+
+    const headerStyle = {
+      ...baseCellStyle,
+      fill: {
+        fgColor: { rgb: '1F4E78' },
+      },
+      font: {
+        bold: true,
+        color: { rgb: 'FFFFFF' },
+      },
+    };
+
+    const totalRows = excelRows.length + 1;
+    const totalCols = headers.length;
+
+    for (let row = 0; row < totalRows; row += 1) {
+      for (let col = 0; col < totalCols; col += 1) {
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+        const cell = worksheet[cellAddress] as any;
+        if (!cell) continue;
+        cell.s = row === 0 ? headerStyle : baseCellStyle;
+      }
+    }
+
+    worksheet['!rows'] = [{ hpt: 24 }];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Employees');
+
     const fullFilename = `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(workbook, fullFilename);
 

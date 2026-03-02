@@ -22,6 +22,10 @@ import PageCompyuter from "./pages/ViewCompyuter/PagaCompyuter.tsx";
 import EditCompyuterPage from "./pages/EditCompyuter/EditCompyuterPage.tsx";
 import AddItemPage from './pages/AddItem/AddItemPage.tsx';
 import EditEmployeePage from './pages/EditEmployee/EditEmployeePage.tsx';
+import AddEmployeePage from './pages/AddEmployee/AddEmployeePage.tsx';
+import StatisticsPage from './pages/Statistics';
+import PPEArrivalPage from './pages/PPEArrival';
+import SignaturePage from './pages/Signature/SignaturePage.tsx';
 import 'primeicons/primeicons.css';
 
 
@@ -101,6 +105,42 @@ function App() {
             <>
               <PageTitle title="Добавить средства защиты" />
               <AddItemPage />
+            </>
+          }
+        />
+        <Route
+          path={`/signature/:id`}
+          element={
+            <>
+              <PageTitle title="Подпись сотрудника" />
+              <SignaturePage />
+            </>
+          }
+        />
+        <Route
+          path="/add-employee"
+          element={
+            <>
+              <PageTitle title="Добавить сотрудника" />
+              <AddEmployeePage />
+            </>
+          }
+        />
+        <Route
+          path="/ppe-arrival"
+          element={
+            <>
+              <PageTitle title="Прием СИЗ" />
+              <PPEArrivalPage />
+            </>
+          }
+        />
+        <Route
+          path="/statistics"
+          element={
+            <>
+              <PageTitle title="Статистика" />
+              <StatisticsPage />
             </>
           }
         />

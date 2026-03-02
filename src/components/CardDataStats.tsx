@@ -4,25 +4,29 @@ interface CardDataStatsProps {
   title: string;
   total: string;
   setSelectKey: (key: string | null) => void;
+  clickKey?: string;
   children: ReactNode;
   isLoading?: boolean;
   isActive?: boolean;
+  cardClassName?: string;
 }
 
 const CardDataStats: React.FC<CardDataStatsProps> = ({
   title,
   total,
   setSelectKey,
+  clickKey,
   children,
   isLoading = false,
   isActive = false,
+  cardClassName,
 }) => {
   return (
     <div
-      onClick={() => !isLoading && setSelectKey(isActive ? null : title)}
+      onClick={() => !isLoading && setSelectKey(isActive ? null : (clickKey || title))}
       className={`rounded-sm border duration-200 py-6 px-7.5 shadow-default dark:bg-boxdark ${isActive
           ? 'bg-blue-50 border-primary dark:bg-meta-4 scale-105'
-          : 'bg-white border-stroke dark:border-strokedark'
+          : `${cardClassName || 'bg-white'} border-stroke dark:border-strokedark`
         } ${isLoading ? 'opacity-60 cursor-not-allowed' : 'hover:scale-105 hover:cursor-pointer'
         }`}
     >
