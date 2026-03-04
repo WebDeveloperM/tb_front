@@ -15,9 +15,11 @@ const SignIn: React.FC = () => {
   const [password, setPassword] = useState("");
   const [faceCapture, setFaceCapture] = useState("");
   const [faceModalOpen, setFaceModalOpen] = useState(false);
+  const [faceTargetUser, setFaceTargetUser] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraLive, setCameraLive] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [faceVerifyError, setFaceVerifyError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [_, setResData] = useState("");
   const [error, setError] = useState<any>(null);
@@ -43,6 +45,16 @@ const SignIn: React.FC = () => {
       stopCamera();
     };
   }, []);
+
+  useEffect(() => {
+    if (faceModalOpen) {
+      setFaceCapture('');
+      setFaceVerifyError('');
+      startCamera();
+      return;
+    }
+    stopCamera();
+  }, [faceModalOpen]);
 
   const startCamera = async () => {
     try {
@@ -81,7 +93,7 @@ const SignIn: React.FC = () => {
     }
   };
 
-  const captureFace = () => {
+  const captureFace = async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -94,13 +106,18 @@ const SignIn: React.FC = () => {
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     setFaceCapture(dataUrl);
+    setFaceVerifyError('');
     toast.success('Face ID кадр сохранён');
+
+    await performLogin(true, dataUrl);
   };
 
   const closeFaceModal = () => {
     setFaceModalOpen(false);
     setFaceCapture('');
+    setFaceTargetUser('');
     setCameraError('');
+    setFaceVerifyError('');
     stopCamera();
   };
 
@@ -117,14 +134,15 @@ const SignIn: React.FC = () => {
     localStorage.setItem("isLogin", "true")
   };
 
-  const performLogin = async (withFaceId: boolean) => {
+  const performLogin = async (withFaceId: boolean, capturedFace?: string) => {
     const payload: Record<string, string> = {
       username,
       password,
     };
 
-    if (withFaceId && faceCapture) {
-      payload.face_capture = faceCapture;
+    const facePayload = capturedFace || faceCapture;
+    if (withFaceId && facePayload) {
+      payload.face_capture = facePayload;
     }
 
     setSubmitting(true);
@@ -135,14 +153,32 @@ const SignIn: React.FC = () => {
       closeFaceModal();
       navigate("/");
     } catch (err: any) {
-      const requiresFaceId = Boolean(err?.response?.data?.requires_face_id);
-      if (requiresFaceId) {
+      const responseData = err?.response?.data || {};
+      const requiresFaceId = Boolean(responseData?.requires_face_id);
+      if (requiresFaceId && !withFaceId) {
+        const fullName = [responseData?.lastname, responseData?.firstname]
+          .filter((item: string) => String(item || '').trim())
+          .join(' ')
+          .trim();
+
+        setFaceTargetUser(fullName || responseData?.username || username);
+        setFaceVerifyError('');
         setFaceModalOpen(true);
         toast.info('Для этой роли требуется Face ID подтверждение');
         return;
       }
 
-      const message = err?.response?.data?.error || "Неправильный логин или пароль";
+      if (requiresFaceId && withFaceId) {
+        const message = responseData?.error || 'Face ID не подтвержден';
+        setFaceVerifyError(String(message));
+        toast.error(String(message));
+        return;
+      }
+
+      const message = responseData?.error || "Неправильный логин или пароль";
+      if (faceModalOpen) {
+        setFaceVerifyError(String(message));
+      }
       toast.error(String(message));
       setError(err)
     } finally {
@@ -161,14 +197,6 @@ const SignIn: React.FC = () => {
     await performLogin(false);
   };
 
-  const handleFaceIdConfirm = async () => {
-    if (!faceCapture) {
-      toast.warning('Сначала снимите кадр Face ID');
-      return;
-    }
-
-    await performLogin(true);
-  };
   console.log(error, 1111111);
 
 
@@ -373,23 +401,22 @@ const SignIn: React.FC = () => {
 
       {faceModalOpen && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-xl dark:bg-boxdark">
+          <div className="w-1/2 rounded-lg bg-white p-4 shadow-xl dark:bg-boxdark">
             <h3 className="mb-3 text-lg font-semibold text-black dark:text-white">Face ID подтверждение</h3>
+            {faceTargetUser ? (
+              <p className="mb-2 text-sm font-medium text-black dark:text-white">Пользователь: {faceTargetUser}</p>
+            ) : null}
             <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">Для admin/кладовщика вход подтверждается по Face ID.</p>
 
             {!cameraOpen ? (
-              <button
-                type="button"
-                onClick={startCamera}
-                className="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
-              >
-                Открыть камеру
-              </button>
+              <div className="rounded border border-stroke px-3 py-2 text-sm text-slate-600 dark:border-strokedark dark:text-slate-300">
+                Запуск камеры...
+              </div>
             ) : (
               <div className="space-y-2">
                 <video
                   ref={videoRef}
-                  className="w-full max-w-sm rounded border bg-black"
+                  className="h-[70vh] w-full rounded border bg-black object-cover"
                   autoPlay
                   playsInline
                   muted
@@ -401,38 +428,25 @@ const SignIn: React.FC = () => {
                   <button
                     type="button"
                     onClick={captureFace}
-                    disabled={!cameraLive}
+                    disabled={!cameraLive || submitting}
                     className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
-                    Снять кадр
-                  </button>
-                  <button
-                    type="button"
-                    onClick={stopCamera}
-                    className="rounded bg-slate-500 px-3 py-2 text-sm text-white hover:bg-slate-600"
-                  >
-                    Закрыть камеру
+                    {submitting ? 'Проверка...' : 'Снять кадр и войти'}
                   </button>
                 </div>
               </div>
             )}
 
             {cameraError ? <p className="mt-2 text-xs text-red-600">{cameraError}</p> : null}
-            {faceCapture ? <p className="mt-2 text-xs text-green-600">Face ID кадр tayyor</p> : null}
+            {faceVerifyError ? <p className="mt-2 text-xs text-red-600">{faceVerifyError}</p> : null}
+            {faceCapture ? <p className="mt-2 text-xs text-green-600">Face ID кадр готов</p> : null}
             <canvas ref={canvasRef} className="hidden" />
 
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
-                onClick={handleFaceIdConfirm}
-                disabled={submitting}
-                className="rounded bg-primary px-4 py-2 text-white disabled:opacity-60"
-              >
-                Подтвердить и войти
-              </button>
-              <button
-                type="button"
                 onClick={closeFaceModal}
+                disabled={submitting}
                 className="rounded border border-stroke px-4 py-2 dark:border-strokedark"
               >
                 Отмена
