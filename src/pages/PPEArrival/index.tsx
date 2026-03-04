@@ -126,6 +126,7 @@ DateInput.displayName = 'DateInput';
 const PPEArrivalPage = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [arrivals, setArrivals] = useState<ArrivalRow[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
 
@@ -326,6 +327,8 @@ const PPEArrivalPage = () => {
       return;
     }
 
+    setIsExporting(true);
+
     try {
       const sortedRows = [...filteredArrivals].sort((left, right) => {
         const leftTime = left.received_at ? new Date(left.received_at).getTime() : Number.POSITIVE_INFINITY;
@@ -432,6 +435,8 @@ const PPEArrivalPage = () => {
     } catch (error) {
       console.error('Ошибка экспорта Excel:', error);
       toast.error('Не удалось скачать Excel');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -590,10 +595,30 @@ const PPEArrivalPage = () => {
           <button
             type="button"
             onClick={exportArrivalsToExcel}
-            disabled={filteredArrivals.length === 0}
-            className="ml-auto rounded bg-meta-3 px-4 py-2 font-medium text-white hover:bg-opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={filteredArrivals.length === 0 || isExporting}
+            title="Скачать Excel"
+            className={`ml-auto flex h-10 w-12 items-center justify-center rounded-md transition-colors duration-200 ${
+              isExporting
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-green-600 hover:bg-green-700'
+            } text-white disabled:cursor-not-allowed disabled:opacity-50`}
           >
-            Скачать Excel
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              {/* Green background */}
+              <rect x="2" y="2" width="20" height="20" rx="4" fill="#217346" />
+              {/* White document */}
+              <path
+                d="M9 6.5C8.44772 6.5 8 6.94772 8 7.5V16.5C8 17.0523 8.44772 17.5 9 17.5H15C15.5523 17.5 16 17.0523 16 16.5V10L12.5 6.5H9Z"
+                fill="white"
+              />
+              {/* Document fold */}
+              <path d="M12.5 6.5L16 10H13.25C12.6977 10 12.25 9.55228 12.25 9V6.5H12.5Z" fill="#e6f2e8" />
+              {/* X inside document */}
+              <path
+                d="M10.4 14.2L11.6 13L10.4 11.8C10.1828 11.5828 10.1828 11.2314 10.4 11.0142C10.6172 10.797 10.9686 10.797 11.1858 11.0142L12.4 12.2284L13.6142 11.0142C13.8314 10.797 14.1828 10.797 14.4 11.0142C14.6172 11.2314 14.6172 11.5828 14.4 11.8L13.2 13L14.4 14.2C14.6172 14.4172 14.6172 14.7686 14.4 14.9858C14.1828 15.203 13.8314 15.203 13.6142 14.9858L12.4 13.7716L11.1858 14.9858C10.9686 15.203 10.6172 15.203 10.4 14.9858C10.1828 14.7686 10.1828 14.4172 10.4 14.2Z"
+                fill="#217346"
+              />
+            </svg>
           </button>
         </div>
 
@@ -642,9 +667,9 @@ const PPEArrivalPage = () => {
             {groupedArrivals.map((group, groupIndex) => (
               <div
                 key={`arrival-group-${group.date}-${groupIndex}`}
-                className="overflow-hidden rounded-md border border-stroke"
+                className="overflow-hidden rounded-md border border-stroke dark:border-strokedark"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stroke bg-slate-50 px-4 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stroke bg-gray-2 px-4 py-2 dark:border-strokedark dark:bg-meta-4">
                   <div className="text-sm font-medium">Приемка #{groupedArrivals.length - groupIndex}</div>
                   <div className="text-xs text-slate-600">Дата приема: {formatDate(group.date)}</div>
                 </div>
@@ -652,7 +677,7 @@ const PPEArrivalPage = () => {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-stroke bg-slate-50 text-left">
+                      <tr className="border-b border-stroke bg-gray-2 text-left dark:border-strokedark dark:bg-meta-4">
                         <th className="px-3 py-2">№</th>
                         <th className="px-3 py-2">Средство защиты</th>
                         <th className="px-3 py-2">Количество</th>
@@ -663,7 +688,7 @@ const PPEArrivalPage = () => {
                     </thead>
                     <tbody>
                       {group.rows.flatMap((row) => expandArrivalRowBySizes(row, sizeFilterTokens)).map((row, rowIndex) => (
-                        <tr key={row.key} className="border-b border-stroke">
+                        <tr key={row.key} className="border-b border-stroke dark:border-strokedark">
                           <td className="px-3 py-2">{rowIndex + 1}</td>
                           <td className="px-3 py-2">{row.ppeproduct_name}</td>
                           <td className="px-3 py-2">{row.quantity}</td>

@@ -24,6 +24,17 @@ const PPEHelmetGogglesIcon: React.FC<{ className?: string }> = ({ className }) =
     </svg>
 );
 
+const OverdueWarningIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className={className}
+        fill="currentColor"
+    >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+    </svg>
+);
+
 const Main: React.FC = () => {
     const [computerData, setComputerData] = useState<Compyuter[]>([])
     const [selectKey, setSelectKey] = useState<string | null>("")
@@ -40,7 +51,7 @@ const Main: React.FC = () => {
 
     const handleSelectKey = (key: string | null) => {
         setSelectKey(key);
-        if (!key || key === 'Все сотрудники') {
+        if (!key || key === 'Все сотрудники' || key === 'overdue') {
             setSelectedProductId(null);
             if (!key) {
                 setIsCardFilterLoading(false);
@@ -144,7 +155,9 @@ const Main: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6 xl:grid-cols-5 2xl:gap-7.5">
+
+
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7">
                         {(infoCompData?.due_products || []).map((product) => {
                             const cardKey = `ppe:${product.id}`;
                             const count = product.due_count ?? 0;
@@ -164,56 +177,21 @@ const Main: React.FC = () => {
                             );
                         })}
 
-                        {/* <CardDataStats title="Не рабочие компьютеры"
-                            total={`${infoCompData?.all_noworked_compyuters_count}`}
-                            setSelectKey={handleSelectKey} isLoading={isCardFilterLoading && selectKey === "Не рабочие компьютеры"}
-                            isActive={selectKey === "Не рабочие компьютеры"}>
-                            <RiComputerLine className="fill-primary dark:fill-white text-2xl" width="35" height="30" />
+                        {/* Overdue card */}
+                        <CardDataStats
+                            key="overdue"
+                            title="Срок истек"
+                            total={`${infoCompData?.overdue_count ?? 0}`}
+                            clickKey="overdue"
+                            setSelectKey={handleSelectKey}
+                            isLoading={isCardFilterLoading && selectKey === 'overdue'}
+                            isActive={selectKey === 'overdue'}
+                            titleClassName="text-red-500 dark:text-red-400"
+                        >
+                            <OverdueWarningIcon className="h-7 w-7 text-red-500 dark:text-red-400" />
                         </CardDataStats>
 
-
-                        <CardDataStats title="Интернет" total={`${infoCompData?.all_compyuters_with_net}`}
-                            setSelectKey={handleSelectKey} isLoading={isCardFilterLoading && selectKey === "Интернет"}
-                            isActive={selectKey === "Интернет"}>
-                            <MdSignalWifiStatusbarConnectedNoInternet2 style={{ color: "#3C50E0" }}
-                                className="fill-primary dark:fill-white text-2xl"
-                                width="20" height="22" />
-                        </CardDataStats>
-
-                        <CardDataStats title="Нет интернета" total={`${infoCompData?.all_compyuters_with_no_net}`}
-                            setSelectKey={handleSelectKey} isLoading={isCardFilterLoading && selectKey === "Нет интернета"}
-                            isActive={selectKey === "Нет интернета"}>
-                            <MdSignalWifiStatusbarConnectedNoInternet2 style={{ color: "#3C50E0" }}
-                                className="fill-primary dark:fill-white text-2xl"
-                                width="20" height="22" />
-                        </CardDataStats>
-
-                        <CardDataStats title="Веб-камеры" total={`${infoCompData?.all_compyuters_with_webcam}`}
-                            setSelectKey={handleSelectKey} isLoading={isCardFilterLoading && selectKey === "Веб-камеры"}
-                            isActive={selectKey === "Веб-камеры"}>
-                            <RiWebcamLine className="fill-primary dark:fill-white text-2xl" width="35" height="30" />
-                        </CardDataStats>
-
-
-                        <CardDataStats title="Принтеры" total={`${infoCompData?.all_compyuters_with_printer}`}
-                            setSelectKey={handleSelectKey} isLoading={isCardFilterLoading && selectKey === "Принтеры"}
-                            isActive={selectKey === "Принтеры"}>
-                            <AiOutlinePrinter className="fill-primary dark:fill-white text-2xl" width="35" height="30" />
-                        </CardDataStats>
-
-                        <CardDataStats title="Сканеры" total={`${infoCompData?.all_compyuters_with_scaner}`}
-                            setSelectKey={handleSelectKey} isLoading={isCardFilterLoading && selectKey === "Сканеры"}
-                            isActive={selectKey === "Сканеры"}>
-                            <MdOutlineAdfScanner className="fill-primary dark:fill-white text-2xl" width="35"
-                                height="30" />
-                        </CardDataStats>
-
-                        <CardDataStats title="МФУ" total={`${infoCompData?.all_compyuters_with_mfo}`}
-                            setSelectKey={handleSelectKey} isLoading={isCardFilterLoading && selectKey === "МФУ"}
-                            isActive={selectKey === "МФУ"}>
-                            <TbFunctionFilled style={{ color: "#3C50E0" }}
-                                className="fill-primary dark:fill-white text-2xl" width="35" height="30" />
-                        </CardDataStats> */}
+                        
 
                     </div>
 

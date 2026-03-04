@@ -114,6 +114,7 @@ export type InfoComputerData = {
         name: string,
         due_count: number,
     }>,
+    overdue_count?: number,
     all_compyuters_count?: number,
     all_worked_compyuters_count?: number,
 };

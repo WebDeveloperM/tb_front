@@ -5,8 +5,13 @@ import { Link, useParams } from "react-router-dom";
 import { GrAddCircle } from "react-icons/gr";
 import { FaRegCalendarAlt } from "react-icons/fa";
 import { FaFileExcel } from "react-icons/fa";
+import { FaFilePdf } from "react-icons/fa";
 import * as XLSX from 'xlsx-js-style';
 import { toast } from 'react-toastify';
+import pdfMake from 'pdfmake/build/pdfmake';
+import pdfFonts from 'pdfmake/build/vfs_fonts';
+
+(pdfMake as any).vfs = (pdfFonts as any)?.pdfMake?.vfs || (pdfFonts as any)?.vfs;
 
 type PpeInfo = {
     id: number;
@@ -16,6 +21,19 @@ type PpeInfo = {
     type_product_display?: string | null;
     renewal_months: number;
     is_new?: boolean | null;
+};
+
+type ResponsiblePersonInfo = {
+    id: number;
+    full_name?: string | null;
+    position?: string | null;
+};
+
+type PPECatalogItem = {
+    id: number;
+    name?: string | null;
+    type_product?: string | null;
+    renewal_months?: number | null;
 };
 
 type ItemDetail = {
@@ -35,6 +53,13 @@ type ItemDetail = {
         surname?: string;
         tabel_number?: string;
         position?: string;
+        gender?: string;
+        height?: string;
+        clothe_size?: string;
+        shoe_size?: string;
+        headdress_size?: string;
+        date_of_employment?: string | null;
+        date_of_change_position?: string | null;
         department?: {
             name?: string;
             boss_fullName?: string;
@@ -47,6 +72,7 @@ type ItemDetail = {
         id: number;
         slug?: string | null;
         image?: string | null;
+        signature_image?: string | null;
         issued_at?: string | null;
         next_due_date?: string | null;
         is_current?: boolean;
@@ -57,11 +83,14 @@ type ItemDetail = {
         } | null;
         ppeproduct_info?: PpeInfo[];
     }>;
+    responsible_persons?: ResponsiblePersonInfo[];
+    ppe_products?: PPECatalogItem[];
 };
 
 export default function ViewPO() {
     const [itemDetailData, setItemDetailData] = useState<ItemDetail | null>(null);
     const [previewImage, setPreviewImage] = useState<{ imageUrl: string; issuedAt?: string | null } | null>(null);
+    const [isPdfExporting, setIsPdfExporting] = useState(false);
     const [issuedFromDate, setIssuedFromDate] = useState('');
     const [issuedToDate, setIssuedToDate] = useState('');
     const [productFilterId, setProductFilterId] = useState<number | ''>('');
@@ -71,6 +100,8 @@ export default function ViewPO() {
     const { slug } = useParams();
     const role = localStorage.getItem('role') || 'user';
     const canAddItem = role === 'admin' || role === 'warehouse_manager';
+
+    const [pendingIssue, setPendingIssue] = useState<{ id: number; timeRemainingSeconds: number } | null>(null);
 
     const resolveImageUrl = (value?: string | null) => {
         if (!value) return '';
@@ -96,6 +127,26 @@ export default function ViewPO() {
         if (Number.isNaN(date.getTime())) return '-';
         date.setMonth(date.getMonth() + renewalMonths);
         return formatDate(date.toISOString());
+    };
+
+    const formatGender = (value?: string | null) => {
+        const raw = String(value || '').trim().toUpperCase();
+        if (!raw) return '-';
+        if (raw === 'M' || raw === 'М') return 'Мужской';
+        if (raw === 'F' || raw === 'Ж') return 'Женский';
+        return value || '-';
+    };
+
+    const findResponsibleByPosition = (positionKeywords: string[]) => {
+        const people = itemDetailData?.responsible_persons ?? [];
+        if (!people.length) return '-';
+
+        const matched = people.find((person) => {
+            const position = String(person.position || '').toLowerCase();
+            return positionKeywords.some((keyword) => position.includes(keyword));
+        });
+
+        return matched?.full_name || '-';
     };
 
     const historyGroups = (itemDetailData?.issue_history ?? []).filter(
@@ -300,6 +351,290 @@ export default function ViewPO() {
         }
     };
 
+    const fileToDataUrl = (file: Blob): Promise<string> => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result || ''));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+
+    const loadImageAsDataUrl = async (value?: string | null) => {
+        if (!value) return null;
+
+        const resolvedUrl = resolveImageUrl(value);
+        if (!resolvedUrl) return null;
+
+        try {
+            const response = await axioss.get(resolvedUrl, { responseType: 'blob' });
+            return await fileToDataUrl(response.data);
+        } catch (error) {
+            console.log('Не удалось загрузить изображение подписи для PDF:', error);
+            return null;
+        }
+    };
+
+    const exportFilteredHistoryToPdf = async () => {
+        const employeeData = itemDetailData?.employee;
+        const sortedForExport = [...displayedHistoryGroups].sort((left, right) => {
+            const leftTime = left.issued_at ? new Date(left.issued_at).getTime() : Number.POSITIVE_INFINITY;
+            const rightTime = right.issued_at ? new Date(right.issued_at).getTime() : Number.POSITIVE_INFINITY;
+            return leftTime - rightTime;
+        });
+
+        const ppeRows = sortedForExport.flatMap((issue) =>
+            (issue.ppeproduct_info ?? []).map((product, index) => ([
+                index + 1,
+                product.name || '-',
+                product.type_product_display || product.type_product || '-',
+                product.size || '-',
+                String(product.renewal_months ?? '-'),
+                formatDate(issue.issued_at),
+                calculateNextIssueDate(issue.issued_at, product.renewal_months),
+            ])),
+        );
+
+        if (!ppeRows.length) {
+            toast.warning('Нет данных для экспорта в PDF');
+            return;
+        }
+
+        setIsPdfExporting(true);
+
+        try {
+            const signatureSources = Array.from(new Set(
+                sortedForExport
+                    .map((issue) => issue.signature_image)
+                    .filter((value): value is string => Boolean(value)),
+            ));
+
+            const signatureDataBySource = new Map<string, string>();
+            await Promise.all(signatureSources.map(async (source) => {
+                const dataUrl = await loadImageAsDataUrl(source);
+                if (dataUrl) {
+                    signatureDataBySource.set(source, dataUrl);
+                }
+            }));
+
+            const latestIssueWithSignature = [...sortedForExport]
+                .reverse()
+                .find((issue) => Boolean(issue.signature_image && signatureDataBySource.get(issue.signature_image)));
+            const signatureDataUrl = latestIssueWithSignature?.signature_image
+                ? signatureDataBySource.get(latestIssueWithSignature.signature_image) || null
+                : null;
+
+            const employeeFullName = [employeeData?.last_name, employeeData?.first_name, employeeData?.surname]
+                .filter(Boolean)
+                .join(' ') || '-';
+            const mmXtBossName = findResponsibleByPosition(['boshlig', 'boshliq']);
+            const mmXtEngineerName = findResponsibleByPosition(['muhandis']);
+            const chiefAccountantName = findResponsibleByPosition(['hisobchi']);
+
+            const issuedCountsByProductId = new Map<number, number>();
+            sortedForExport.forEach((issue) => {
+                (issue.ppeproduct_info ?? []).forEach((product) => {
+                    const productId = Number(product.id);
+                    if (!Number.isFinite(productId)) return;
+                    issuedCountsByProductId.set(productId, (issuedCountsByProductId.get(productId) || 0) + 1);
+                });
+            });
+
+            const catalogProducts = itemDetailData?.ppe_products ?? [];
+            const normRows = catalogProducts.map((product) => {
+                const productId = Number(product.id);
+                const issuedCount = Number.isFinite(productId) ? (issuedCountsByProductId.get(productId) || 0) : 0;
+                return [
+                    String(product.name || '-'),
+                    String(product.type_product || '-'),
+                    issuedCount > 0 ? String(issuedCount) : '-',
+                    `${String(product.renewal_months ?? '-') } oy`,
+                ];
+            });
+
+            const movementRows = sortedForExport.flatMap((issue) =>
+                (issue.ppeproduct_info ?? []).map((product) => ([
+                    product.name || '-',
+                    formatDate(issue.issued_at),
+                    issue.signature_image && signatureDataBySource.get(issue.signature_image)
+                        ? { image: signatureDataBySource.get(issue.signature_image), fit: [56, 16], alignment: 'center' }
+                        : '-',
+                    issue.issued_by_info?.full_name || issue.issued_by_info?.username || '-',
+                ])),
+            );
+
+            const gridLayout = {
+                hLineWidth: () => 0.7,
+                vLineWidth: () => 0.7,
+                hLineColor: () => '#374151',
+                vLineColor: () => '#374151',
+                paddingLeft: () => 3,
+                paddingRight: () => 3,
+                paddingTop: () => 2,
+                paddingBottom: () => 2,
+            };
+
+            const line = (label: string, value: string) => `${label}${value || '-'}`;
+            const currentPageUrl = typeof window !== 'undefined' ? window.location.href : '';
+
+            const documentDefinition: any = {
+                pageSize: 'A4',
+                pageMargins: [20, 16, 20, 16],
+                content: [
+                    {
+                        stack: [
+                            { text: 'SX, MMQ va EBYAT\nAC-ilova asosida', style: 'tinyCenter', margin: [0, 0, 0, 6] },
+                            { text: 'Yakka tartibdagi himoya vositalari berishni hisobga olish shakli MB-6', style: 'headerCenter', margin: [0, 0, 0, 3] },
+                            { text: '“Buxoro NQIZ” MCHJ', style: 'headerCenter', margin: [0, 0, 0, 6] },
+                            {
+                                text: 'Yakka tartibdagi himoya (maxsus kiyim, maxsus oyoq kiyim va h.k.) vositalarini berishni hisobga olish shaxsiy varaqasi',
+                                style: 'smallCenter',
+                                margin: [0, 0, 0, 8],
+                            },
+                            {
+                                columns: [
+                                    {
+                                        width: '66%',
+                                        stack: [
+                                            { text: line('Familiyasi: ', employeeData?.last_name || '-'), style: 'lineText' },
+                                            { text: line('Ismi: ', employeeData?.first_name || '-'), style: 'lineText' },
+                                            { text: line('Otasining ismi: ', employeeData?.surname || '-'), style: 'lineText' },
+                                            { text: line('Tabel raqami: ', employeeData?.tabel_number || '-'), style: 'lineText' },
+                                            { text: line('Sex: ', employeeData?.department?.name || '-'), style: 'lineText' },
+                                            { text: line('Kasbi (lavozimi): ', employeeData?.position || '-'), style: 'lineText' },
+                                            { text: line('Ishga kirgan sana: ', formatDate(employeeData?.date_of_employment)), style: 'lineText' },
+                                            { text: line("Kasbi (lavozimi)ni o‘zgartirgan sana: ", formatDate(employeeData?.date_of_change_position)), style: 'lineText' },
+                                        ],
+                                    },
+                                    {
+                                        width: '34%',
+                                        stack: [
+                                            { text: line('Jinsi: ', formatGender(employeeData?.gender)), style: 'lineText' },
+                                            { text: line("Bo‘yi: ", employeeData?.height || '-'), style: 'lineText' },
+                                            { text: line('Kiyim: ', employeeData?.clothe_size || '-'), style: 'lineText' },
+                                            { text: line('Poyabzal: ', employeeData?.shoe_size || '-'), style: 'lineText' },
+                                            { text: line('Bosh kiyim: ', employeeData?.headdress_size || '-'), style: 'lineText' },
+                                        ],
+                                    },
+                                ],
+                                columnGap: 8,
+                                margin: [0, 0, 0, 12],
+                            },
+                            {
+                                text: 'Tasdiqlangan me’yor (norma)lar asosida berilishi nazarda tutilgan',
+                                style: 'smallCenter',
+                                margin: [0, 0, 0, 5],
+                            },
+                            {
+                                table: {
+                                    headerRows: 1,
+                                    widths: ['43%', '22%', '15%', '20%'],
+                                    body: [
+                                        [
+                                            { text: 'YATHV nomi', alignment: 'center' },
+                                            { text: "O‘lchov birligi", alignment: 'center' },
+                                            { text: 'Soni', alignment: 'center' },
+                                            { text: 'Yaroqlilik muddati', alignment: 'center' },
+                                        ],
+                                        ...normRows,
+                                    ],
+                                },
+                                layout: gridLayout,
+                                margin: [0, 0, 0, 12],
+                            },
+                            {
+                                table: {
+                                    widths: [220, 150, '*'],
+                                    body: [
+                                        [
+                                            { text: 'MM va XT guruhi boshlig‘i:', style: 'responsibleLabel' },
+                                            { text: '', style: 'responsibleSign' },
+                                            { text: mmXtBossName, style: 'responsibleValue' },
+                                        ],
+                                        [
+                                            { text: 'MM va XT guruhi muhandisi:', style: 'responsibleLabel', margin: [0, 8, 0, 0] },
+                                            { text: '', style: 'responsibleSign', margin: [0, 8, 0, 0] },
+                                            { text: mmXtEngineerName, style: 'responsibleValue', margin: [0, 8, 0, 0] },
+                                        ],
+                                        [
+                                            { text: 'Bosh hisobchi:', style: 'responsibleLabel', margin: [0, 8, 0, 0] },
+                                            { text: '', style: 'responsibleSign', margin: [0, 8, 0, 0] },
+                                            { text: chiefAccountantName, style: 'responsibleValue', margin: [0, 8, 0, 0] },
+                                        ],
+                                        [
+                                            { text: 'Xodim:', style: 'responsibleLabel', margin: [0, 8, 0, 0] },
+                                            signatureDataUrl
+                                                ? { image: signatureDataUrl, fit: [150, 42], alignment: 'left', margin: [0, 4, 0, 0] }
+                                                : { text: 'imzo', style: 'responsibleSign', margin: [0, 8, 0, 0] },
+                                            { text: employeeFullName, style: 'responsibleValue', margin: [0, 8, 0, 0] },
+                                        ],
+                                    ],
+                                },
+                                layout: 'noBorders',
+                                margin: [0, 0, 0, 2],
+                            },
+                            {
+                                qr: currentPageUrl || 'about:blank',
+                                fit: 104,
+                                absolutePosition: { x: 471, y: 718 },
+                            },
+                        ],
+                    },
+                    {
+                        pageBreak: 'before',
+                        stack: [
+                            { text: 'MB-6 shakli orqa tomoni', style: 'titleCenter', margin: [0, 0, 0, 8] },
+                            {
+                                table: {
+                                    headerRows: 1,
+                                    widths: ['35%', '22%', '19%', '24%'],
+                                    body: [
+                                        [
+                                            { text: 'YATHV nomi', alignment: 'center' },
+                                            { text: 'Sana', alignment: 'center' },
+                                            { text: 'Imzo', alignment: 'center' },
+                                            { text: 'Xodim', alignment: 'center' },
+                                        ],
+                                        ...movementRows,
+                                    ],
+                                },
+                                layout: gridLayout,
+                            },
+                            {
+                                qr: currentPageUrl || 'about:blank',
+                                fit: 104,
+                                absolutePosition: { x: 471, y: 718 },
+                            },
+                        ],
+                    },
+                ],
+                defaultStyle: {
+                    fontSize: 9,
+                },
+                styles: {
+                    titleCenter: { fontSize: 16, bold: true, alignment: 'center' },
+                    headerCenter: { fontSize: 12, bold: true, alignment: 'center' },
+                    smallCenter: { fontSize: 10, alignment: 'center' },
+                    tinyCenter: { fontSize: 10, alignment: 'center', italics: true },
+                    small: { fontSize: 10 },
+                    lineText: { fontSize: 10, margin: [0, 0, 0, 3] },
+                    responsibleLabel: { fontSize: 11, bold: true },
+                    responsibleValue: { fontSize: 12, bold: true },
+                    responsibleSign: { fontSize: 11, alignment: 'center', italics: true },
+                },
+            };
+
+            const datePart = new Date().toISOString().slice(0, 10);
+            const fromPart = issuedFromDate || 'all';
+            const toPart = issuedToDate || 'all';
+            pdfMake.createPdf(documentDefinition).download(`ppe_card_${fromPart}_${toPart}_${datePart}.pdf`);
+            toast.success(`PDF успешно сформирован (${ppeRows.length} записей)`);
+        } catch (error) {
+            console.error('Ошибка при экспорте в PDF:', error);
+            toast.error('Произошла ошибка при формировании PDF');
+        } finally {
+            setIsPdfExporting(false);
+        }
+    };
+
     const openDatePicker = (input: HTMLInputElement | null) => {
         if (!input) return;
         const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
@@ -325,7 +660,8 @@ export default function ViewPO() {
                 <th className="px-4 py-3">Срок обновления (мес.)</th>
                 <th className="px-4 py-3">Дата выдачи</th>
                 <th className="px-4 py-3">Следующая выдача</th>
-                <th className="px-4 py-3">Подтверждено через Face ID</th>
+                <th className="px-4 py-3">Face ID</th>
+                <th className="px-4 py-3">Подписано</th>
             </tr>
         </thead>
     );
@@ -356,6 +692,7 @@ export default function ViewPO() {
                             id: Number(item.id),
                             slug: (item as any).slug ?? null,
                             image: (item as any).image ?? null,
+                            signature_image: (item as any).signature_image ?? null,
                             issued_at: item.issued_at ?? null,
                             next_due_date: (item as any).next_due_date ?? null,
                             is_current: Number(item.id) === Number(detail.id),
@@ -376,13 +713,85 @@ export default function ViewPO() {
             .catch((err) => console.log(err));
     }, [slug]);
 
+    // Load active pending issue for this employee to show timer + "Imzolash" button
+    useEffect(() => {
+        const employeeId = itemDetailData?.employee?.id;
+        if (!employeeId) return;
+
+        let cancelled = false;
+
+        axioss
+            .get(`${BASE_URL}/pending-issue/employee/${employeeId}/`)
+            .then((response) => {
+                if (cancelled) return;
+                const data = response.data?.pending;
+                if (!data || typeof data.id !== 'number') {
+                    setPendingIssue(null);
+                    return;
+                }
+                const remaining = Number(data.time_remaining_seconds ?? 0);
+                if (!Number.isFinite(remaining) || remaining <= 0) {
+                    setPendingIssue(null);
+                    return;
+                }
+                setPendingIssue({ id: data.id, timeRemainingSeconds: remaining });
+            })
+            .catch(() => {
+                setPendingIssue(null);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [itemDetailData?.employee?.id]);
+
+    // Countdown for pending issue timer
+    useEffect(() => {
+        if (!pendingIssue) return;
+
+        const intervalId = window.setInterval(() => {
+            setPendingIssue((prev) => {
+                if (!prev) return null;
+                const next = prev.timeRemainingSeconds - 1;
+                if (next <= 0) return null;
+                return { ...prev, timeRemainingSeconds: next };
+            });
+        }, 1000);
+
+        return () => {
+            window.clearInterval(intervalId);
+        };
+    }, [pendingIssue?.id]);
+
+    const formatCountdown = (totalSeconds: number) => {
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        const minutesStr = String(minutes).padStart(1, '0');
+        const secondsStr = String(seconds).padStart(2, '0');
+        return `${minutesStr}:${secondsStr}`;
+    };
+
     return (
         <div className="grid grid-cols-1 sm:grid-cols-12">
             <div className="col-span-12 mx-3">
                 <div className="rounded-md border border-stroke bg-white dark:border-strokedark dark:bg-boxdark">
-                    <div className="px-4 py-3 border-b border-stroke dark:border-strokedark flex items-center justify-between gap-3">
+                    <div className="px-4 py-3 border-b border-stroke dark:border-strokedark flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <h2 className="font-semibold">Средства защиты</h2>
-                        <div className="flex items-center gap-2">
+                        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                            <button
+                                type="button"
+                                onClick={exportFilteredHistoryToPdf}
+                                disabled={displayedHistoryGroups.length === 0 || isPdfExporting}
+                                className="rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Скачать PDF"
+                                aria-label="Скачать PDF"
+                            >
+                                {isPdfExporting ? (
+                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                ) : (
+                                    <FaFilePdf className="text-lg" />
+                                )}
+                            </button>
                             <button
                                 type="button"
                                 onClick={exportFilteredHistoryToExcel}
@@ -406,8 +815,29 @@ export default function ViewPO() {
                     </div>
 
                     <div className="p-4 space-y-4">
-                        <div className="rounded-md border border-stroke dark:border-strokedark p-3 flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex w-full flex-wrap gap-3 xl:w-1/2 xl:flex-nowrap">
+                        {pendingIssue ? (
+                            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900/50 dark:bg-red-950/20">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div className="text-sm font-medium text-red-700 dark:text-red-300">
+                                        Imzolash kutilmoqda
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-semibold text-red-700 dark:text-red-300">
+                                            {formatCountdown(pendingIssue.timeRemainingSeconds)}
+                                        </span>
+                                        <Link
+                                            to={`/signature/${pendingIssue.id}`}
+                                            className="rounded px-3 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700"
+                                        >
+                                            Подписание
+                                        </Link>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : null}
+
+                        <div className="rounded-md border border-stroke dark:border-strokedark p-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="flex w-full flex-col gap-3 xl:w-1/2 xl:flex-row xl:flex-nowrap">
                                 <div className="w-full xl:flex-1">
                                     <select
                                         value={productFilterId}
@@ -439,21 +869,21 @@ export default function ViewPO() {
                                         setProductFilterId('');
                                         setSizeFilter('');
                                     }}
-                                    className="h-[42px] rounded border border-stroke bg-white px-6 text-base text-slate-700 hover:bg-slate-50 dark:border-strokedark dark:bg-boxdark dark:hover:bg-boxdark-2"
+                                    className="h-[42px] w-full rounded border border-stroke bg-white px-6 text-base text-slate-700 hover:bg-slate-50 dark:border-strokedark dark:bg-boxdark dark:hover:bg-boxdark-2 xl:w-auto"
                                 >
                                     Сбросить
                                 </button>
                             </div>
 
-                            <div className="ml-auto flex flex-wrap items-center gap-3">
-                                <label className="mb-1 block text-sm font-medium">C даты</label>
-                                <div className="relative">
+                            <div className="flex w-full flex-col gap-3 xl:ml-auto xl:w-auto xl:flex-row xl:flex-wrap xl:items-center">
+                                <label className="text-sm font-medium">C даты</label>
+                                <div className="relative w-full xl:w-auto">
                                     <input
                                         ref={issuedFromInputRef}
                                         type="date"
                                         value={issuedFromDate}
                                         onChange={(event) => setIssuedFromDate(event.target.value)}
-                                        className="rounded border px-3 py-2 pr-10 text-sm"
+                                        className="w-full rounded border px-3 py-2 pr-10 text-sm xl:w-auto"
                                     />
                                     <button
                                         type="button"
@@ -464,14 +894,14 @@ export default function ViewPO() {
                                         <FaRegCalendarAlt />
                                     </button>
                                 </div>
-                                <label className="mb-1 block text-sm font-medium">По дату</label>
-                                <div className="relative">
+                                <label className="text-sm font-medium">По дату</label>
+                                <div className="relative w-full xl:w-auto">
                                     <input
                                         ref={issuedToInputRef}
                                         type="date"
                                         value={issuedToDate}
                                         onChange={(event) => setIssuedToDate(event.target.value)}
-                                        className="rounded border px-3 py-2 pr-10 text-sm"
+                                        className="w-full rounded border px-3 py-2 pr-10 text-sm xl:w-auto"
                                     />
                                     <button
                                         type="button"
@@ -488,7 +918,7 @@ export default function ViewPO() {
                                         setIssuedFromDate('');
                                         setIssuedToDate('');
                                     }}
-                                    className="rounded border border-stroke px-3 py-2 text-sm hover:bg-slate-50 dark:border-strokedark dark:hover:bg-boxdark-2"
+                                    className="w-full rounded border border-stroke px-3 py-2 text-sm hover:bg-slate-50 dark:border-strokedark dark:hover:bg-boxdark-2 xl:w-auto"
                                 >
                                     Сбросить фильтр
                                 </button>
@@ -496,7 +926,7 @@ export default function ViewPO() {
                         </div>
 
                         {historyGroups.length > 0 ? (
-                            displayedHistoryGroups.length > 0 ? displayedHistoryGroups.map((issue) => (
+                            displayedHistoryGroups.length > 0 ? displayedHistoryGroups.map((issue, index) => (
                                 <div
                                     key={`issue-${issue.id}-${issue.displayNumber}`}
                                     className={`rounded-md border border-stroke dark:border-strokedark overflow-hidden ${issue.is_current ? 'ring-1 ring-meta-3/40' : ''}`}
@@ -505,14 +935,27 @@ export default function ViewPO() {
                                         <div className="font-medium text-sm">
                                             Выдача #{issue.displayNumber}
                                         </div>
-                                        <div className="text-xs text-slate-600 dark:text-slate-300">
-                                            Дата выдачи: {formatDate(issue.issued_at)}
+                                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
+                                            <span>Дата выдачи: {formatDate(issue.issued_at)}</span>
+                                            {issue.is_current ? (
+                                                <span className="px-2 py-1 rounded bg-meta-3/15 text-meta-3 font-medium">
+                                                    Новая выдача
+                                                </span>
+                                            ) : null}
+                                            {index === 0 && pendingIssue && (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-semibold text-emerald-700">
+                                                        {formatCountdown(pendingIssue.timeRemainingSeconds)}
+                                                    </span>
+                                                    <Link
+                                                        to={`/signature/${pendingIssue.id}`}
+                                                        className="rounded  px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 bg-red-600 hover:bg-red-700"
+                                                    >
+                                                        Подписание
+                                                    </Link>
+                                                </div>
+                                            )}
                                         </div>
-                                        {issue.is_current ? (
-                                            <span className="text-xs px-2 py-1 rounded bg-meta-3/15 text-meta-3 font-medium">
-                                                Новая выдача
-                                            </span>
-                                        ) : null}
                                     </div>
 
                                     <div className="overflow-x-auto">
@@ -532,31 +975,58 @@ export default function ViewPO() {
                                                         <td className="px-4 py-3">{formatDate(issue.issued_at)}</td>
                                                         <td className="px-4 py-3">{calculateNextIssueDate(issue.issued_at, product.renewal_months)}</td>
                                                         {productIndex === 0 ? (
-                                                            <td
-                                                                className="px-4 py-3 align-top"
-                                                                rowSpan={Math.max((issue.ppeproduct_info ?? []).length, 1)}
-                                                            >
-                                                                {issue.image ? (
-                                                                    <div className="flex flex-col items-start gap-1">
-                                                                        <img
-                                                                            src={resolveImageUrl(issue.image)}
-                                                                            alt="issue_photo"
-                                                                            className="h-14 w-14 rounded border object-cover cursor-pointer"
-                                                                            onClick={() =>
-                                                                                setPreviewImage({
-                                                                                    imageUrl: resolveImageUrl(issue.image),
-                                                                                    issuedAt: issue.issued_at,
-                                                                                })
-                                                                            }
-                                                                        />
-                                                                        <div className="text-[11px] text-slate-500 dark:text-slate-300">
-                                                                            Проверено: {formatDate(issue.issued_at)}
+                                                            <>
+                                                                <td
+                                                                    className="px-4 py-3 align-top"
+                                                                    rowSpan={Math.max((issue.ppeproduct_info ?? []).length, 1)}
+                                                                >
+                                                                    {issue.image ? (
+                                                                        <div className="flex flex-col items-start gap-1">
+                                                                            <img
+                                                                                src={resolveImageUrl(issue.image)}
+                                                                                alt="issue_photo"
+                                                                                className="h-14 w-14 rounded border object-cover cursor-pointer"
+                                                                                onClick={() =>
+                                                                                    setPreviewImage({
+                                                                                        imageUrl: resolveImageUrl(issue.image),
+                                                                                        issuedAt: issue.issued_at,
+                                                                                    })
+                                                                                }
+                                                                            />
+                                                                            <div className="text-[11px] text-slate-500 dark:text-slate-300">
+                                                                                Проверено: {formatDate(issue.issued_at)}
+                                                                            </div>
                                                                         </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <span className="text-xs text-slate-400">-</span>
-                                                                )}
-                                                            </td>
+                                                                    ) : (
+                                                                        <span className="text-xs text-slate-400">-</span>
+                                                                    )}
+                                                                </td>
+                                                                <td
+                                                                    className="px-4 py-3 align-top"
+                                                                    rowSpan={Math.max((issue.ppeproduct_info ?? []).length, 1)}
+                                                                >
+                                                                    {issue.signature_image ? (
+                                                                        <div className="flex flex-col items-start gap-1">
+                                                                            <img
+                                                                                src={resolveImageUrl(issue.signature_image)}
+                                                                                alt="signature_photo"
+                                                                                className="h-14 w-28 rounded border object-contain bg-white cursor-pointer"
+                                                                                onClick={() =>
+                                                                                    setPreviewImage({
+                                                                                        imageUrl: resolveImageUrl(issue.signature_image!),
+                                                                                        issuedAt: issue.issued_at,
+                                                                                    })
+                                                                                }
+                                                                            />
+                                                                            <div className="text-[11px] text-slate-500 dark:text-slate-300">
+                                                                                Проверено: {formatDate(issue.issued_at)}
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-xs text-slate-400">-</span>
+                                                                    )}
+                                                                </td>
+                                                            </>
                                                         ) : null}
                                                     </tr>
                                                 ))}
@@ -639,7 +1109,7 @@ export default function ViewPO() {
                 >
                     <div className="w-full max-w-xl rounded-md bg-white p-4 shadow-xl dark:bg-boxdark">
                         <div className="mb-3 flex items-center justify-between">
-                            <h3 className="text-sm font-semibold">Подтвержденное фото</h3>
+                            <h3 className="text-sm font-semibold">Подтвержденное подписание</h3>
                             <button
                                 type="button"
                                 onClick={closePreviewModal}

@@ -96,7 +96,7 @@ const ViewCompyuter = () => {
               <div>
                 <h1 className="p-5 pt-5 pb-3 font-semibold">Сотрудник</h1>
                 <div className="p-5 py-3 pb-5 border-b mb-2">
-                  <div className="flex items-start gap-4">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
                     <div className="min-w-0 flex-1">
                       <div className="grid sm:grid-cols-12 gap-4">
                         <ModalDataInput
@@ -144,13 +144,13 @@ const ViewCompyuter = () => {
                       </div>
                     </div>
 
-                    <div className="shrink-0 self-start">
+                    <div className="w-full shrink-0 self-start lg:w-auto">
                       <label className="mb-2 block text-black dark:text-white">Базовое фото сотрудника</label>
                       {employeeBaseImageUrl ? (
                         <button
                           type="button"
                           onClick={() => setPreviewImage(employeeBaseImageUrl)}
-                          className="h-40 w-48 rounded border bg-black/5 p-1"
+                          className="h-40 w-full max-w-xs rounded border bg-black/5 p-1 lg:w-48"
                         >
                           <img
                             src={employeeBaseImageUrl}
@@ -159,7 +159,7 @@ const ViewCompyuter = () => {
                           />
                         </button>
                       ) : (
-                        <div className="w-48 rounded border border-dashed px-4 py-3 text-sm text-gray-500">
+                        <div className="w-full max-w-xs rounded border border-dashed px-4 py-3 text-sm text-gray-500 lg:w-48">
                           Базовое фото отсутствует
                         </div>
                       )}

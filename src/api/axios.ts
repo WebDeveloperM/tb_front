@@ -25,4 +25,19 @@ axioss.interceptors.request.use(
     }
 );
 
+axioss.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        const status = error?.response?.status;
+        if (status === 401) {
+            localStorage.clear();
+            const currentPath = window.location.pathname;
+            if (currentPath !== '/auth/signin') {
+                window.location.replace('/auth/signin');
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 export default axioss; // Instanceni eksport qilamiz

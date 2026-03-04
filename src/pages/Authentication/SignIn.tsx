@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import Breadcrumb from '../../components/Breadcrumbs/Breadcrumb'
 import Logo from "../../images/logo/logo.png"
 import { FaKey } from "react-icons/fa6"
@@ -13,9 +13,142 @@ const SignIn: React.FC = () => {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [faceCapture, setFaceCapture] = useState("");
+  const [faceModalOpen, setFaceModalOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraLive, setCameraLive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [_, setResData] = useState("");
-  const [error, setError] = useState();
+  const [error, setError] = useState<any>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const navigate = useNavigate();
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraOpen(false);
+    setCameraLive(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
+
+  const startCamera = async () => {
+    try {
+      setCameraError('');
+      stopCamera();
+      setCameraOpen(true);
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+
+      if (!videoRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error('video_not_ready');
+      }
+
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      streamRef.current = stream;
+      setCameraLive(stream.getVideoTracks().some((track) => track.readyState === 'live'));
+    } catch (error: any) {
+      const errorName = String(error?.name || '');
+      if (errorName === 'NotAllowedError') {
+        setCameraError('Доступ к камере запрещён. Разрешите доступ в браузере.');
+      } else if (errorName === 'NotFoundError') {
+        setCameraError('Камера не найдена.');
+      } else {
+        setCameraError('Не удалось открыть камеру.');
+      }
+      setCameraOpen(false);
+      setCameraLive(false);
+    }
+  };
+
+  const captureFace = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    setFaceCapture(dataUrl);
+    toast.success('Face ID кадр сохранён');
+  };
+
+  const closeFaceModal = () => {
+    setFaceModalOpen(false);
+    setFaceCapture('');
+    setCameraError('');
+    stopCamera();
+  };
+
+  const persistLoginData = (response: any) => {
+    setResData(response.data);
+    localStorage.setItem("token", response.data.token)
+    localStorage.setItem("expires_at", response.data.expires_at)
+    localStorage.setItem("firstname", response.data.firstname)
+    localStorage.setItem("lastname", response.data.lastname)
+    localStorage.setItem("username", response.data.username || username)
+    localStorage.setItem("role", response.data.role || "user")
+    localStorage.setItem("can_edit", String(Boolean(response.data?.permissions?.can_edit)))
+    localStorage.setItem("can_delete", String(Boolean(response.data?.permissions?.can_delete)))
+    localStorage.setItem("isLogin", "true")
+  };
+
+  const performLogin = async (withFaceId: boolean) => {
+    const payload: Record<string, string> = {
+      username,
+      password,
+    };
+
+    if (withFaceId && faceCapture) {
+      payload.face_capture = faceCapture;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await axios.post(`${BASE_URL}/users/login/`, payload);
+      toast.success("Вы успешно вошли в систему.");
+      persistLoginData(response);
+      closeFaceModal();
+      navigate("/");
+    } catch (err: any) {
+      const requiresFaceId = Boolean(err?.response?.data?.requires_face_id);
+      if (requiresFaceId) {
+        setFaceModalOpen(true);
+        toast.info('Для этой роли требуется Face ID подтверждение');
+        return;
+      }
+
+      const message = err?.response?.data?.error || "Неправильный логин или пароль";
+      toast.error(String(message));
+      setError(err)
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -25,27 +158,16 @@ const SignIn: React.FC = () => {
       toast.warning("Требуется логин и пароль")
       return
     }
-    axios
-      .post(`${BASE_URL}/users/login/`, { username, password })
-      .then((response) => {
-        toast.success("Вы успешно вошли в систему.");
-        setResData(response.data);
-        localStorage.setItem("token", response.data.token)
-        localStorage.setItem("expires_at", response.data.expires_at)
-        localStorage.setItem("firstname", response.data.firstname)
-        localStorage.setItem("lastname", response.data.lastname)
-        localStorage.setItem("username", response.data.username || username)
-        localStorage.setItem("role", response.data.role || "user")
-        localStorage.setItem("can_edit", String(Boolean(response.data?.permissions?.can_edit)))
-        localStorage.setItem("can_delete", String(Boolean(response.data?.permissions?.can_delete)))
-        localStorage.setItem("isLogin", "true")
-        navigate("/")
-      })
-      .catch((err) => {
-        toast.error("Неправильный логин или пароль");
-        setError(err)
-      });
+    await performLogin(false);
+  };
 
+  const handleFaceIdConfirm = async () => {
+    if (!faceCapture) {
+      toast.warning('Сначала снимите кадр Face ID');
+      return;
+    }
+
+    await performLogin(true);
   };
   console.log(error, 1111111);
 
@@ -58,7 +180,7 @@ const SignIn: React.FC = () => {
         <div className="flex flex-wrap items-center">
           <div className="hidden w-full xl:block xl:w-1/2">
             <div className="py-17.5 px-26 text-center">
-              <a className="inline-block" href='https://e-imzo.soliq.uz/main/downloads/' target='_blank'>
+              <a className="inline-block" href='https://bnpz.uz' target='_blank'>
                 <img className="w-[120px] mb-2" src={Logo} alt="Logo" />
                 {/* <img className="dark:hidden" src={LogoDark} alt="Logo" /> */}
               </a>
@@ -233,6 +355,7 @@ const SignIn: React.FC = () => {
                   <input
                     type="submit"
                     value="Войти"
+                    disabled={submitting}
                     className="w-full cursor-pointer rounded-lg border border-primary bg-primary p-4 text-white transition hover:bg-opacity-90"
                   />
                 </div>
@@ -247,6 +370,77 @@ const SignIn: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {faceModalOpen && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-xl dark:bg-boxdark">
+            <h3 className="mb-3 text-lg font-semibold text-black dark:text-white">Face ID подтверждение</h3>
+            <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">Для admin/кладовщика вход подтверждается по Face ID.</p>
+
+            {!cameraOpen ? (
+              <button
+                type="button"
+                onClick={startCamera}
+                className="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+              >
+                Открыть камеру
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <video
+                  ref={videoRef}
+                  className="w-full max-w-sm rounded border bg-black"
+                  autoPlay
+                  playsInline
+                  muted
+                  onPlaying={() => setCameraLive(true)}
+                  onPause={() => setCameraLive(false)}
+                  onEmptied={() => setCameraLive(false)}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={captureFace}
+                    disabled={!cameraLive}
+                    className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    Снять кадр
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopCamera}
+                    className="rounded bg-slate-500 px-3 py-2 text-sm text-white hover:bg-slate-600"
+                  >
+                    Закрыть камеру
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {cameraError ? <p className="mt-2 text-xs text-red-600">{cameraError}</p> : null}
+            {faceCapture ? <p className="mt-2 text-xs text-green-600">Face ID кадр tayyor</p> : null}
+            <canvas ref={canvasRef} className="hidden" />
+
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={handleFaceIdConfirm}
+                disabled={submitting}
+                className="rounded bg-primary px-4 py-2 text-white disabled:opacity-60"
+              >
+                Подтвердить и войти
+              </button>
+              <button
+                type="button"
+                onClick={closeFaceModal}
+                className="rounded border border-stroke px-4 py-2 dark:border-strokedark"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
 
   );

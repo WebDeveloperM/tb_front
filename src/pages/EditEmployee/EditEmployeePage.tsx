@@ -456,10 +456,14 @@ const EditEmployeePage = () => {
     try {
       setCameraError('');
       stopCamera();
+      setCameraOpen(true);
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+
       const stream = await openPreferredCameraStream();
       streamRef.current = stream;
 
-      setCameraOpen(true);
       setCameraLive(stream.getVideoTracks().some((track) => track.readyState === 'live'));
     } catch (error: any) {
       const errorName = String(error?.name || '');
@@ -475,6 +479,7 @@ const EditEmployeePage = () => {
       } else {
         setCameraError('Kamera ochilmadi. Qurilma yoki browser sozlamalarini tekshiring');
       }
+      setCameraOpen(false);
       setCameraLive(false);
     }
   };
@@ -486,12 +491,18 @@ const EditEmployeePage = () => {
     try {
       setCameraError('');
       stopCamera();
+      setCameraOpen(true);
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+
       const stream = await openPreferredCameraStream();
       streamRef.current = stream;
-      setCameraOpen(true);
       setCameraLive(stream.getVideoTracks().some((track) => track.readyState === 'live'));
     } catch {
       setCameraError('Tanlangan kamera ishga tushmadi');
+      setCameraOpen(false);
+      setCameraLive(false);
     }
   };
 

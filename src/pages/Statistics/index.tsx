@@ -1,4 +1,6 @@
 import { forwardRef, useEffect, useMemo, useState, Fragment } from 'react';
+import type { ApexOptions } from 'apexcharts';
+import ReactApexChart from 'react-apexcharts';
 import Breadcrumb from '../../components/Breadcrumbs/Breadcrumb';
 import axioss from '../../api/axios';
 import { BASE_URL } from '../../utils/urls';
@@ -24,92 +26,6 @@ type StatisticsResponse = {
     remaining: number;
   };
   rows: StatisticsRow[];
-};
-
-type ArrivalRow = {
-  id: number;
-  ppeproduct: number;
-  ppeproduct_name: string;
-  quantity: number;
-  size?: string | null;
-  size_breakdown?: Record<string, number>;
-  size_display?: string;
-  received_at: string;
-  accepted_by?: string | null;
-};
-
-type ExpandedArrivalRow = {
-  key: string;
-  ppeproduct_name: string;
-  quantity: number | string;
-  size: string;
-  received_at: string;
-  accepted_by?: string | null;
-};
-
-const formatDate = (value?: string | null) => {
-  if (!value) return '-';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  const day = String(parsed.getDate()).padStart(2, '0');
-  const month = String(parsed.getMonth() + 1).padStart(2, '0');
-  const year = parsed.getFullYear();
-  return `${day}.${month}.${year}`;
-};
-
-const normalizeDate = (value?: string | null) => {
-  if (!value) return '';
-  return String(value).slice(0, 10);
-};
-
-const expandArrivalRowBySize = (row: ArrivalRow): ExpandedArrivalRow[] => {
-  const fromBreakdown = row.size_breakdown && typeof row.size_breakdown === 'object'
-    ? Object.entries(row.size_breakdown)
-    : [];
-
-  if (fromBreakdown.length > 0) {
-    return fromBreakdown.map(([sizeKey, qty], index) => ({
-      key: `${row.id}-${sizeKey}-${index}`,
-      ppeproduct_name: row.ppeproduct_name,
-      quantity: Number(qty) || 0,
-      size: sizeKey,
-      received_at: row.received_at,
-      accepted_by: row.accepted_by,
-    }));
-  }
-
-  const sizeDisplay = String(row.size_display || '').trim();
-  if (sizeDisplay.includes('=')) {
-    const parsedPairs = sizeDisplay
-      .split(',')
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((part) => {
-        const [sizeKey, qtyRaw] = part.split('=').map((piece) => (piece || '').trim());
-        return { sizeKey, qtyRaw };
-      })
-      .filter((pair) => pair.sizeKey);
-
-    if (parsedPairs.length > 0) {
-      return parsedPairs.map((pair, index) => ({
-        key: `${row.id}-${pair.sizeKey}-${index}`,
-        ppeproduct_name: row.ppeproduct_name,
-        quantity: Number(pair.qtyRaw) || pair.qtyRaw || 0,
-        size: pair.sizeKey,
-        received_at: row.received_at,
-        accepted_by: row.accepted_by,
-      }));
-    }
-  }
-
-  return [{
-    key: `${row.id}-base`,
-    ppeproduct_name: row.ppeproduct_name,
-    quantity: row.quantity,
-    size: String(row.size || row.size_display || '-'),
-    received_at: row.received_at,
-    accepted_by: row.accepted_by,
-  }];
 };
 
 const toDateInput = (date: Date) => {
@@ -146,15 +62,11 @@ const DateInput = forwardRef<HTMLInputElement, { value?: string; onClick?: () =>
 DateInput.displayName = 'DateInput';
 
 const StatisticsPage = () => {
-  const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState<Date | null>(null);
   const [toDate, setToDate] = useState<Date | null>(null);
   const [appliedFromDate, setAppliedFromDate] = useState('');
   const [appliedToDate, setAppliedToDate] = useState('');
-  const [arrivalProductFilter, setArrivalProductFilter] = useState('');
-  const [arrivalSizeFilter, setArrivalSizeFilter] = useState('');
   const [stats, setStats] = useState<StatisticsResponse | null>(null);
-  const [arrivals, setArrivals] = useState<ArrivalRow[]>([]);
   
   // Filters for main statistics table
   const [productFilter, setProductFilter] = useState('');
@@ -165,7 +77,6 @@ const StatisticsPage = () => {
 
   const fetchStats = async (range?: { from: string; to: string }) => {
     try {
-      setLoading(true);
       const effectiveFrom = range ? range.from : appliedFromDate;
       const effectiveTo = range ? range.to : appliedToDate;
       const params = new URLSearchParams();
@@ -174,20 +85,12 @@ const StatisticsPage = () => {
 
       const query = params.toString();
       const url = query ? `${BASE_URL}/statistics/ppe/?${query}` : `${BASE_URL}/statistics/ppe/`;
-      const [statsResponse, arrivalsResponse] = await Promise.all([
-        axioss.get(url),
-        axioss.get(`${BASE_URL}/ppe-arrivals/`),
-      ]);
+      const statsResponse = await axioss.get(url);
 
       setStats(statsResponse.data as StatisticsResponse);
-
-      const arrivalsData = Array.isArray(arrivalsResponse.data) ? arrivalsResponse.data : [];
-      setArrivals(arrivalsData as ArrivalRow[]);
     } catch (error: any) {
       const backendError = error?.response?.data?.error;
       toast.error(backendError || 'Ошибка при загрузке статистики');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -290,59 +193,118 @@ const StatisticsPage = () => {
     setExpandedGroups(new Set());
   };
 
-  const arrivalProductOptions = useMemo(() => {
-    return Array.from(new Set(
-      arrivals
-        .map((row) => String(row.ppeproduct_name || '').trim())
-        .filter(Boolean),
-    )).sort((left, right) => left.localeCompare(right, 'ru'));
-  }, [arrivals]);
 
-  const filteredArrivals = useMemo(() => {
-    const productFilter = arrivalProductFilter.trim().toLowerCase();
+  const groupedBarCategories = useMemo(
+    () => groupedProducts.map((group) => group.baseName),
+    [groupedProducts],
+  );
 
-    return arrivals.filter((row) => {
-      const receivedDate = normalizeDate(row.received_at);
-      if (!receivedDate) return false;
-      if (appliedFromDate && receivedDate < appliedFromDate) return false;
-      if (appliedToDate && receivedDate > appliedToDate) return false;
+  const groupedBarSeries = useMemo(
+    () => [
+      {
+        name: 'Поступило',
+        data: groupedProducts.map((group) => group.totals.arrived),
+      },
+      {
+        name: 'Выдано',
+        data: groupedProducts.map((group) => group.totals.issued),
+      },
+      {
+        name: 'Остаток',
+        data: groupedProducts.map((group) => group.totals.remaining),
+      },
+    ],
+    [groupedProducts],
+  );
 
-      const productName = String(row.ppeproduct_name || '').toLowerCase();
+  const groupedBarOptions = useMemo<ApexOptions>(
+    () => ({
+      chart: {
+        type: 'bar',
+        toolbar: { show: false },
+      },
+      colors: ['#3C50E0', '#6577F3', '#0FADCF'],
+      plotOptions: {
+        bar: {
+          horizontal: false,
+          columnWidth: '55%',
+        },
+      },
+      dataLabels: { enabled: false },
+      stroke: {
+        show: true,
+        width: 1,
+        colors: ['transparent'],
+      },
+      xaxis: {
+        categories: groupedBarCategories,
+        labels: {
+          rotate: -25,
+          hideOverlappingLabels: true,
+        },
+      },
+      yaxis: {
+        min: 0,
+      },
+      legend: {
+        position: 'top',
+      },
+      tooltip: {
+        y: {
+          formatter: (val) => `${val}`,
+        },
+      },
+    }),
+    [groupedBarCategories],
+  );
 
-      if (productFilter && !productName.includes(productFilter)) return false;
+  const donutData = useMemo(() => {
+    const sorted = [...groupedProducts]
+      .sort((left, right) => right.totals.remaining - left.totals.remaining)
+      .filter((item) => item.totals.remaining > 0);
 
-      return true;
-    });
-  }, [arrivals, appliedFromDate, appliedToDate, arrivalProductFilter]);
+    const top = sorted.slice(0, 6);
+    const otherSum = sorted.slice(6).reduce((sum, item) => sum + item.totals.remaining, 0);
 
-  const expandedFilteredArrivals = useMemo(() => {
-    const sizeFilter = arrivalSizeFilter.trim().toLowerCase();
+    const labels = top.map((item) => item.baseName);
+    const values = top.map((item) => item.totals.remaining);
 
-    const expanded = filteredArrivals.flatMap(expandArrivalRowBySize);
-    if (!sizeFilter) return expanded;
+    if (otherSum > 0) {
+      labels.push('Остальные');
+      values.push(otherSum);
+    }
 
-    return expanded.filter((row) => String(row.size || '').toLowerCase().includes(sizeFilter));
-  }, [filteredArrivals, arrivalSizeFilter]);
+    return { labels, values };
+  }, [groupedProducts]);
 
-  const groupedArrivals = useMemo(() => {
-    const groups: Array<{ date: string; rows: ExpandedArrivalRow[] }> = [];
-    const groupIndexByDate = new Map<string, number>();
+  const donutOptions = useMemo<ApexOptions>(
+    () => ({
+      chart: {
+        type: 'donut',
+      },
+      labels: donutData.labels,
+      legend: {
+        position: 'bottom',
+      },
+      dataLabels: {
+        enabled: false,
+      },
+      plotOptions: {
+        pie: {
+          donut: {
+            size: '62%',
+          },
+        },
+      },
+      tooltip: {
+        y: {
+          formatter: (val) => `${val}`,
+        },
+      },
+    }),
+    [donutData.labels],
+  );
 
-    expandedFilteredArrivals.forEach((row) => {
-      const dateKey = normalizeDate(row.received_at);
-      const existingIndex = groupIndexByDate.get(dateKey);
-
-      if (existingIndex === undefined) {
-        groupIndexByDate.set(dateKey, groups.length);
-        groups.push({ date: dateKey, rows: [row] });
-        return;
-      }
-
-      groups[existingIndex].rows.push(row);
-    });
-
-    return groups;
-  }, [expandedFilteredArrivals]);
 
   return (
     <>
@@ -352,8 +314,8 @@ const StatisticsPage = () => {
         {/* Filters row */}
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           {/* Left side: Product and Size filters */}
-          <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-end">
-            <div className="md:w-48">
+          <div className="flex flex-2 flex-col gap-3 md:flex-row md:items-end">
+            <div className="md:w-60">
               <select
                 value={productFilter}
                 onChange={(e) => setProductFilter(e.target.value)}
@@ -538,6 +500,36 @@ const StatisticsPage = () => {
           </table>
         </div>
 
+        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="rounded border border-stroke p-4">
+            <div className="mb-3 text-sm font-semibold">Поступило / Выдано / Остаток</div>
+            {groupedProducts.length > 0 ? (
+              <ReactApexChart
+                options={groupedBarOptions}
+                series={groupedBarSeries}
+                type="bar"
+                height={320}
+              />
+            ) : (
+              <div className="py-10 text-center text-sm text-slate-500">Нет данных для построения графика</div>
+            )}
+          </div>
+
+          <div className="rounded border border-stroke p-4">
+            <div className="mb-3 text-sm font-semibold">Остаток по средствам защиты</div>
+            {donutData.values.length > 0 ? (
+              <ReactApexChart
+                options={donutOptions}
+                series={donutData.values}
+                type="donut"
+                height={320}
+              />
+            ) : (
+              <div className="py-10 text-center text-sm text-slate-500">Остаток равен 0, график не отображается</div>
+            )}
+          </div>
+        </div>
+
         {/* <div className="mt-6">
           <h3 className="mb-3 text-base font-semibold">Прием поступивших СИЗ на склад</h3>
           <div className="mb-3 flex w-full flex-col gap-3 md:w-1/2 md:flex-row">
@@ -577,9 +569,9 @@ const StatisticsPage = () => {
               {groupedArrivals.map((group, groupIndex) => (
                 <div
                   key={`arrival-group-${group.date}-${groupIndex}`}
-                  className="overflow-hidden rounded-md border border-stroke"
+                  className="overflow-hidden rounded-md border border-stroke dark:border-strokedark"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stroke bg-slate-50 px-4 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stroke bg-gray-2 px-4 py-2 dark:border-strokedark dark:bg-meta-4">
                     <div className="text-sm font-medium">Приемка #{groupedArrivals.length - groupIndex}</div>
                     <div className="text-xs text-slate-600">Дата приема: {formatDate(group.date)}</div>
                   </div>
@@ -587,7 +579,7 @@ const StatisticsPage = () => {
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-stroke bg-slate-50 text-left">
+                        <tr className="border-b border-stroke bg-gray-2 text-left dark:border-strokedark dark:bg-meta-4">
                           <th className="px-3 py-2">№</th>
                           <th className="px-3 py-2">Средство защиты</th>
                           <th className="px-3 py-2">Количество</th>
@@ -598,7 +590,7 @@ const StatisticsPage = () => {
                       </thead>
                       <tbody>
                         {group.rows.map((row, rowIndex) => (
-                          <tr key={row.key} className="border-b border-stroke">
+                          <tr key={row.key} className="border-b border-stroke dark:border-strokedark">
                             <td className="px-3 py-2">{rowIndex + 1}</td>
                             <td className="px-3 py-2">{row.size && row.size !== '-' ? `${row.ppeproduct_name} (Размер ${row.size})` : row.ppeproduct_name}</td>
                             <td className="px-3 py-2">{row.quantity}</td>

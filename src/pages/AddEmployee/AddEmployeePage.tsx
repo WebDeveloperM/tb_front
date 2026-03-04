@@ -75,11 +75,20 @@ const AddEmployeePage = () => {
   const [checkingTabelNumber, setCheckingTabelNumber] = useState(false);
   const [lastDuplicateNotifiedTabel, setLastDuplicateNotifiedTabel] = useState('');
   const [baseImageFile, setBaseImageFile] = useState<File | null>(null);
+  const [baseImagePreview, setBaseImagePreview] = useState('');
   const [baseImageError, setBaseImageError] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraLive, setCameraLive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [sections, setSections] = useState<SectionOption[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const [form, setForm] = useState<FormState>(initialForm);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FormKey, string>>>({});
@@ -304,6 +313,194 @@ const AddEmployeePage = () => {
     }
   };
 
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraOpen(false);
+    setCameraLive(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
+
+  const pickPreferredExternalCamera = (devices: MediaDeviceInfo[]) => {
+    if (!devices.length) return '';
+    const externalKeywords = ['usb', 'webcam', 'logitech', 'external', 'hd pro'];
+    const integratedKeywords = ['integrated', 'internal', 'built-in', 'facetime', 'default'];
+
+    const externalDevice = devices.find((device) => {
+      const label = String(device.label || '').toLowerCase();
+      const hasExternalKeyword = externalKeywords.some((keyword) => label.includes(keyword));
+      const hasIntegratedKeyword = integratedKeywords.some((keyword) => label.includes(keyword));
+      return hasExternalKeyword && !hasIntegratedKeyword;
+    });
+
+    if (externalDevice) return externalDevice.deviceId;
+    if (devices.length > 1) return devices[devices.length - 1].deviceId;
+    return devices[0].deviceId;
+  };
+
+  const loadVideoDevices = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return [] as MediaDeviceInfo[];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter((device) => device.kind === 'videoinput');
+    setVideoDevices(cameras);
+
+    if (!selectedDeviceId || !cameras.some((camera) => camera.deviceId === selectedDeviceId)) {
+      setSelectedDeviceId(pickPreferredExternalCamera(cameras));
+    }
+
+    return cameras;
+  };
+
+  useEffect(() => {
+    loadVideoDevices().catch(() => {
+      setVideoDevices([]);
+    });
+  }, []);
+
+  const attachAndPlayStream = async (stream: MediaStream) => {
+    if (!videoRef.current) return false;
+    const video = videoRef.current;
+    video.srcObject = stream;
+
+    try {
+      await video.play();
+    } catch {
+      return false;
+    }
+
+    const hasLiveTrack = stream.getVideoTracks().some((track) => track.readyState === 'live');
+    return hasLiveTrack;
+  };
+
+  const openPreferredCameraStream = async () => {
+    let cameras = await loadVideoDevices();
+
+    if (!cameras.length || cameras.every((camera) => !camera.label)) {
+      const warmupStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      warmupStream.getTracks().forEach((track) => track.stop());
+      cameras = await loadVideoDevices();
+    }
+
+    const preferredDeviceId = selectedDeviceId || pickPreferredExternalCamera(cameras);
+    const primaryConstraints: MediaStreamConstraints = {
+      video: preferredDeviceId
+        ? {
+            deviceId: { ideal: preferredDeviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          }
+        : {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+      audio: false,
+    };
+
+    try {
+      return await navigator.mediaDevices.getUserMedia(primaryConstraints);
+    } catch {
+      return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+  };
+
+  const startCamera = async () => {
+    try {
+      setCameraError('');
+      stopCamera();
+      setCameraOpen(true);
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+
+      const stream = await openPreferredCameraStream();
+      const started = await attachAndPlayStream(stream);
+      if (!started) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error('camera_not_started');
+      }
+
+      streamRef.current = stream;
+      setCameraLive(stream.getVideoTracks().some((track) => track.readyState === 'live'));
+    } catch (error: any) {
+      const errorName = String(error?.name || '');
+      if (errorName === 'NotReadableError') {
+        setCameraError('Kamera band (boshqa dastur ishlatyapti). Uni yopib qayta urinib ko‘ring');
+      } else if (errorName === 'NotAllowedError') {
+        setCameraError('Камерага рухсат берилмаган. Browser рухсатини текширинг');
+      } else if (errorName === 'NotFoundError') {
+        setCameraError('Камера қурилмаси топилмади');
+      } else {
+        setCameraError('Камера очилмади. Қурилма ёки браузер созламаларини текширинг');
+      }
+      setCameraOpen(false);
+      setCameraLive(false);
+    }
+  };
+
+  const handleCameraDeviceChange = async (nextDeviceId: string) => {
+    setSelectedDeviceId(nextDeviceId);
+    if (!cameraOpen) return;
+
+    try {
+      setCameraError('');
+      stopCamera();
+      setCameraOpen(true);
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+
+      const stream = await openPreferredCameraStream();
+      const started = await attachAndPlayStream(stream);
+      if (!started) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error('camera_not_started');
+      }
+
+      streamRef.current = stream;
+      setCameraLive(stream.getVideoTracks().some((track) => track.readyState === 'live'));
+    } catch {
+      setCameraError('Танланган камера ишга тушмади');
+      setCameraOpen(false);
+      setCameraLive(false);
+    }
+  };
+
+  const capturePhotoFromCamera = () => {
+    if (!videoRef.current || !cameraCanvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = cameraCanvasRef.current;
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    setBaseImagePreview(imageDataUrl);
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const file = new File([blob], `employee-camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setBaseImageFile(file);
+      setBaseImageError('');
+      toast.success('Фото с камеры выбрано');
+    }, 'image/jpeg', 0.92);
+  };
+
   if (!isAuthenticated()) {
     return <Navigate to="/auth/signin" />;
   }
@@ -450,20 +647,107 @@ const AddEmployeePage = () => {
                     </div>
                     <ModalDataInput label="Руководитель цеха" inputData={selectedDepartmentBoss} wrapperClassName="col-span-3" />
 
-                    <div className="col-span-3">
+                    <div className="col-span-6">
                       <label className="mb-3 block text-black dark:text-white">Базовое фото 3x4</label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          setBaseImageFile(file);
-                          if (file) {
-                            setBaseImageError('');
-                          }
-                        }}
-                        className="w-full rounded-md border border-stroke bg-transparent py-2 px-3 text-black file:mr-4 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm dark:border-form-strokedark dark:bg-form-input dark:text-white"
-                      />
+                      <div className="grid gap-3 sm:grid-cols-12">
+                        <div className="sm:col-span-7">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              setBaseImageFile(file);
+                              if (file) {
+                                setBaseImageError('');
+                                setBaseImagePreview(URL.createObjectURL(file));
+                              }
+                            }}
+                            className="w-full rounded-md border border-stroke bg-transparent py-2 px-3 text-black file:mr-4 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm dark:border-form-strokedark dark:bg-form-input dark:text-white"
+                          />
+
+                          <div className="mt-2 rounded border p-3">
+                            <label className="mb-1 block text-sm text-gray-700">Камера</label>
+                            <select
+                              value={selectedDeviceId}
+                              onChange={(e) => handleCameraDeviceChange(e.target.value)}
+                              className="mb-2 w-full rounded border px-2 py-2 text-sm"
+                            >
+                              {videoDevices.length === 0 ? (
+                                <option value="">Камера не найдена</option>
+                              ) : (
+                                videoDevices.map((device, index) => (
+                                  <option key={device.deviceId || `cam-${index}`} value={device.deviceId}>
+                                    {device.label || `Камера ${index + 1}`}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+
+                            {!cameraOpen ? (
+                              <button
+                                type="button"
+                                onClick={startCamera}
+                                className="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+                              >
+                                Открыть камеру
+                              </button>
+                            ) : (
+                              <div className="space-y-2">
+                                <video
+                                  ref={videoRef}
+                                  className="w-full rounded border bg-black"
+                                  autoPlay
+                                  playsInline
+                                  muted
+                                  onPlaying={() => setCameraLive(true)}
+                                  onPause={() => setCameraLive(false)}
+                                  onEmptied={() => setCameraLive(false)}
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={capturePhotoFromCamera}
+                                    disabled={!cameraLive}
+                                    className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-50"
+                                  >
+                                    Снять фото
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={stopCamera}
+                                    className="rounded bg-slate-500 px-3 py-2 text-sm text-white hover:bg-slate-600"
+                                  >
+                                    Закрыть камеру
+                                  </button>
+                                </div>
+                                <div className={`text-xs ${cameraLive ? 'text-green-600' : 'text-gray-500'}`}>
+                                  {cameraLive ? 'Камера работает' : 'Камера не активна'}
+                                </div>
+                              </div>
+                            )}
+
+                            {cameraError ? <p className="mt-2 text-xs text-red-600">{cameraError}</p> : null}
+                            <canvas ref={cameraCanvasRef} className="hidden" />
+                          </div>
+                        </div>
+
+                        <div className="sm:col-span-5">
+                          <div className="h-full rounded border p-3">
+                            <div className="mb-2 text-sm text-gray-600">Текущее фото</div>
+                            {baseImagePreview ? (
+                              <div className="mx-auto h-56 w-40 rounded border bg-black/5 p-1">
+                                <img
+                                  src={baseImagePreview}
+                                  alt="base_image_preview"
+                                  className="h-full w-full rounded object-contain bg-black"
+                                />
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-500">Rasm yuklanmagan</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                       {baseImageError ? <p className="mt-1 text-xs text-red-600">{baseImageError}</p> : null}
                     </div>
                   </div>

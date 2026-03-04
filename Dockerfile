@@ -16,14 +16,11 @@ COPY . .
 # Vite build qilish
 RUN npm run build
 
-# Final stage - serve qilish
-FROM node:20-alpine
-WORKDIR /app
-COPY --from=build /app/dist /app/dist
-RUN npm install -g serve
+# Final stage - nginx bilan HTTPS serve
+FROM nginx:1.27-alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Port ochish
-EXPOSE 5175
+EXPOSE 443
 
-# Frontend serverni ishga tushirish
-CMD ["serve", "-s", "dist", "-l", "5175"]
+CMD ["nginx", "-g", "daemon off;"]

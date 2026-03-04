@@ -8,22 +8,30 @@ const DefaultLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
   );
 
   return (
-    <div className="dark:bg-boxdark-2 dark:text-bodydark">
+    <div className="dark:bg-boxdark-2 dark:text-bodydark min-h-screen">
       {/* <!-- ===== Page Wrapper Start ===== --> */}
-      <div className="flex h-screen overflow-hidden">
+      <div className="relative flex h-screen overflow-hidden">
         {/* <!-- ===== Sidebar Start ===== --> */}
         <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
         {/* <!-- ===== Sidebar End ===== --> */}
 
+        {/* Mobile overlay when sidebar is open */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* <!-- ===== Content Area Start ===== --> */}
-        <div className="relative flex flex-1 flex-col overflow-y-auto overflow-x-hidden">
+        <div className="relative z-30 flex flex-1 flex-col overflow-y-auto overflow-x-hidden">
           {/* <!-- ===== Header Start ===== --> */}
           <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
           {/* <!-- ===== Header End ===== --> */}
 
           {/* <!-- ===== Main Content Start ===== --> */}
-          <main>
-            <div className=" p-4 md:p-5 2xl:p-5">
+          <main className="flex-1 bg-gray-2 dark:bg-boxdark-2">
+            <div className="p-4 md:p-5 2xl:p-5">
               {children}
             </div>
           </main>

@@ -754,7 +754,7 @@ export default function ComputerTable({
                     <button
                         type="button"
                         onClick={() => onShowAllEmployees?.()}
-                        className="inline-flex items-center rounded-md border border-stroke bg-meta-2 px-5 py-2 text-base font-semibold text-black transition-colors duration-200 hover:bg-primary hover:text-white dark:border-strokedark dark:bg-meta-4 dark:text-white"
+                        className="inline-flex items-center h-9 rounded-md border border-stroke bg-meta-2 px-3 text-[14px] font-semibold text-black transition-colors duration-200 hover:bg-primary hover:text-white dark:border-strokedark dark:bg-meta-4 dark:text-white"
                         title="Показать всех сотрудников"
                     >
                         Все сотрудники: {allEmployeeCount}
@@ -772,10 +772,10 @@ export default function ComputerTable({
                     {canImport && (
                         <Link
                             to="/add-employee"
-                            className="flex items-center gap-2 px-4 py-2 rounded-md transition-colors duration-200 bg-blue-600 hover:bg-blue-700 text-white"
+                            className="flex items-center justify-center h-9 w-9 rounded-md transition-colors duration-200 bg-blue-600 hover:bg-blue-700 text-white"
                             title="Добавить сотрудника"
                         >
-                            <FiUserPlus className="w-5 h-6" />
+                            <FiUserPlus className="w-5 h-5" />
                         </Link>
                     )}
 
@@ -783,7 +783,7 @@ export default function ComputerTable({
                     <button
                         onClick={handleExportToExcel}
                         disabled={isExporting}
-                        className={`flex h-10 w-12 items-center justify-center rounded-md transition-colors duration-200 ${isExporting
+                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors duration-200 ${isExporting
                                 ? 'bg-gray-400 cursor-not-allowed'
                                 : 'bg-green-600 hover:bg-green-700'
                             } text-white`}
@@ -803,6 +803,7 @@ export default function ComputerTable({
                         value={searchText}
                         onChange={onSearch}
                         placeholder="Поиск..."
+                        className="h-9"
                     />
 
                 </div>

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Loader from './common/Loader';
 import PageTitle from './components/PageTitle';
 import SignIn from './pages/Authentication/SignIn';
+import SignUp from './pages/Authentication/SignUp';
 
 import Calendar from './pages/Calendar';
 import Chart from './pages/Chart';
@@ -26,12 +27,16 @@ import AddEmployeePage from './pages/AddEmployee/AddEmployeePage.tsx';
 import StatisticsPage from './pages/Statistics';
 import PPEArrivalPage from './pages/PPEArrival';
 import SignaturePage from './pages/Signature/SignaturePage.tsx';
+import NastroykaPage from './pages/Nastroyka';
 import 'primeicons/primeicons.css';
+import { isAuthenticated } from './utils/auth';
 
 
 function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const { pathname } = useLocation();
+  const role = (localStorage.getItem('role') || 'user').toLowerCase();
+  const isAdmin = role === 'admin';
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -129,19 +134,40 @@ function App() {
         <Route
           path="/ppe-arrival"
           element={
-            <>
-              <PageTitle title="Прием СИЗ" />
-              <PPEArrivalPage />
-            </>
+            isAuthenticated() ? (
+              <>
+                <PageTitle title="Прием СИЗ" />
+                <PPEArrivalPage />
+              </>
+            ) : (
+              <Navigate to="/auth/signin" replace />
+            )
           }
         />
         <Route
           path="/statistics"
           element={
-            <>
-              <PageTitle title="Статистика" />
-              <StatisticsPage />
-            </>
+            isAuthenticated() ? (
+              <>
+                <PageTitle title="Статистика" />
+                <StatisticsPage />
+              </>
+            ) : (
+              <Navigate to="/auth/signin" replace />
+            )
+          }
+        />
+        <Route
+          path="/nastroyka"
+          element={
+            isAuthenticated() ? (
+              <>
+                <PageTitle title="Настройки" />
+                <NastroykaPage />
+              </>
+            ) : (
+              <Navigate to="/auth/signin" replace />
+            )
           }
         />
         <Route
@@ -243,15 +269,19 @@ function App() {
             </>
           }
         />
-        {/* <Route
+        <Route
           path="/auth/signup"
           element={
-            <>
-              <PageTitle title="Signup | TailAdmin - Tailwind CSS Admin Dashboard Template" />
-              <SignUp />
-            </>
+            isAdmin ? (
+              <>
+                <PageTitle title="Регистрация" />
+                <SignUp />
+              </>
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
-        /> */}
+        />
       </Routes>
       <ToastContainer />
     </DefaultLayout>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axioss from '../../api/axios';
-import { BASE_URL } from '../../utils/urls';
+import { BASE_IMAGE_URL, BASE_URL } from '../../utils/urls';
 import { toast } from 'react-toastify';
 
 type ProductInfo = {
@@ -21,16 +21,62 @@ type EmployeeInfo = {
   tabel_number: string;
   position?: string | null;
   base_image?: string | null;
+  base_image_data?: string | null;
 };
 
 type PendingIssueData = {
   id: number;
   status: string;
+  employee_signature_present?: boolean;
+  warehouse_signature_present?: boolean;
+  requires_warehouse_signature?: boolean;
   expires_at: string;
   time_remaining_seconds: number;
   employee: EmployeeInfo;
   products: ProductInfo[];
   created_at: string;
+};
+
+type SignatureStage = 'employee' | 'warehouse';
+
+const resolveImageUrl = (value?: string | null) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (raw.startsWith('data:')) {
+    return raw;
+  }
+
+  if (raw.startsWith('/')) {
+    return `${BASE_IMAGE_URL}${raw}`;
+  }
+
+  try {
+    const parsed = new URL(raw);
+    const isLocalHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    const isHttp = parsed.protocol === 'http:';
+
+    if (isLocalHost || isHttp) {
+      return `${BASE_IMAGE_URL}${parsed.pathname}${parsed.search}`;
+    }
+
+    return raw;
+  } catch {
+    return `${BASE_IMAGE_URL}/${raw.replace(/^\/+/, '')}`;
+  }
+};
+
+const toBackendImageUrl = (value?: string | null) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (raw.startsWith('data:')) return raw;
+  if (raw.startsWith('/')) return `${BASE_IMAGE_URL}${raw}`;
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  return `${BASE_IMAGE_URL}/${raw.replace(/^\/+/, '')}`;
 };
 
 const SignaturePage = () => {
@@ -43,6 +89,7 @@ const SignaturePage = () => {
   const [pendingData, setPendingData] = useState<PendingIssueData | null>(null);
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [signatureStage, setSignatureStage] = useState<SignatureStage>('employee');
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -64,6 +111,11 @@ const SignaturePage = () => {
         const response = await axioss.get(`${BASE_URL}/pending-issue/${id}/`);
         setPendingData(response.data);
         setTimeRemaining(response.data.time_remaining_seconds || 0);
+        if (response.data.requires_warehouse_signature) {
+          setSignatureStage('warehouse');
+        } else {
+          setSignatureStage('employee');
+        }
         setError('');
       } catch (err: any) {
         const errorData = err?.response?.data;
@@ -208,69 +260,11 @@ const SignaturePage = () => {
     return canvas.toDataURL('image/png');
   };
 
-  // Validate signature to ensure it's not empty or just a simple line
+  // Validate signature to ensure it's not empty
   const validateSignature = (): { valid: boolean; error?: string } => {
-    if (!hasSignature || signaturePoints.length < 10) {
+    // Basic check - minimum points required
+    if (!hasSignature || signaturePoints.length < 5) {
       return { valid: false, error: 'Подпись слишком короткая' };
-    }
-
-    const points = signaturePoints;
-    
-    // Calculate bounding box
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const width = maxX - minX;
-    const height = maxY - minY;
-
-    // Check if signature is too small
-    if (width < 30 && height < 30) {
-      return { valid: false, error: 'Подпись слишком маленькая' };
-    }
-
-    // Check for straight horizontal line (very small height variance)
-    if (height < 15 && width > 50) {
-      return { valid: false, error: 'Простая горизонтальная линия не является подписью' };
-    }
-
-    // Check for straight vertical line (very small width variance)
-    if (width < 15 && height > 50) {
-      return { valid: false, error: 'Простая вертикальная линия не является подписью' };
-    }
-
-    // Calculate variance to detect straight diagonal lines
-    // A real signature should have significant variance from a straight line
-    if (points.length >= 5) {
-      const firstPoint = points[0];
-      const lastPoint = points[points.length - 1];
-      
-      // Calculate expected y for each x if it were a straight line
-      const dx = lastPoint.x - firstPoint.x;
-      const dy = lastPoint.y - firstPoint.y;
-      
-      if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
-        // Calculate perpendicular distance from line for each point
-        const lineLength = Math.sqrt(dx * dx + dy * dy);
-        let totalDeviation = 0;
-        
-        points.forEach((point) => {
-          // Distance from point to line
-          const dist = Math.abs(
-            dy * point.x - dx * point.y + lastPoint.x * firstPoint.y - lastPoint.y * firstPoint.x
-          ) / lineLength;
-          totalDeviation += dist;
-        });
-        
-        const avgDeviation = totalDeviation / points.length;
-        
-        // If average deviation is very low, it's likely a straight line
-        if (avgDeviation < 8) {
-          return { valid: false, error: 'Простая прямая линия не является подписью' };
-        }
-      }
     }
 
     return { valid: true };
@@ -301,6 +295,13 @@ const SignaturePage = () => {
       const response = await axioss.post(`${BASE_URL}/pending-issue/${id}/confirm/`, {
         signature: signatureData,
       });
+
+      if (response.data?.step === 'employee_signed' || response.data?.requires_warehouse_signature) {
+        toast.success(response.data?.message || 'Подпись сотрудника сохранена');
+        setSignatureStage('warehouse');
+        clearSignature();
+        return;
+      }
 
       toast.success('Выдача подтверждена');
       
@@ -352,6 +353,7 @@ const SignaturePage = () => {
     );
   }
 
+   
   if (!pendingData) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-100">
@@ -361,6 +363,9 @@ const SignaturePage = () => {
   }
 
   const timeClass = timeRemaining <= 30 ? 'text-red-600 animate-pulse' : timeRemaining <= 60 ? 'text-amber-600' : 'text-green-600';
+  const employeeBaseImageUrl = resolveImageUrl(
+    pendingData.employee.base_image_data || pendingData.employee.base_image,
+  );
 
   return (
     <div className="min-h-screen bg-slate-100 p-4">
@@ -379,11 +384,24 @@ const SignaturePage = () => {
           <div className="flex gap-4">
             {/* Base image */}
             <div className="flex-shrink-0">
-              {pendingData.employee.base_image ? (
+              {employeeBaseImageUrl ? (
                 <img
-                  src={pendingData.employee.base_image}
+                  src={employeeBaseImageUrl}
                   alt="Фото сотрудника"
                   className="h-32 w-24 rounded border object-cover"
+                  onError={(event) => {
+                    const currentSrc = event.currentTarget.getAttribute('src');
+                    const fallbackSrc = toBackendImageUrl(currentSrc);
+                    const alreadyRetried = event.currentTarget.dataset.retryWithBackend === '1';
+
+                    if (!alreadyRetried && fallbackSrc && fallbackSrc !== currentSrc) {
+                      event.currentTarget.dataset.retryWithBackend = '1';
+                      event.currentTarget.src = fallbackSrc;
+                      return;
+                    }
+
+                    event.currentTarget.style.display = 'none';
+                  }}
                 />
               ) : (
                 <div className="flex h-32 w-24 items-center justify-center rounded border bg-slate-100 text-xs text-gray-400">
@@ -443,9 +461,13 @@ const SignaturePage = () => {
 
         {/* Signature area */}
         <div className="mb-4 rounded-lg bg-white p-4 shadow">
-          <h2 className="mb-3 text-lg font-semibold border-b pb-2">Подпись сотрудника</h2>
+          <h2 className="mb-3 text-lg font-semibold border-b pb-2">
+            {signatureStage === 'employee' ? 'Подпись сотрудника' : 'Подпись кладовщика'}
+          </h2>
           <p className="mb-3 text-sm text-gray-600">
-            Нарисуйте свою подпись в области ниже
+            {signatureStage === 'employee'
+              ? 'Сотрудник ставит подпись в области ниже'
+              : 'Кладовщик ставит подпись для финального подтверждения'}
           </p>
           
           <div className="relative mb-3 rounded border-2 border-dashed border-slate-300 bg-slate-50">
@@ -463,7 +485,7 @@ const SignaturePage = () => {
             />
             {!hasSignature && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-gray-400">
-                Подпишите здесь
+                {signatureStage === 'employee' ? 'Подпись сотрудника' : 'Подпись кладовщика'}
               </div>
             )}
           </div>
@@ -500,7 +522,7 @@ const SignaturePage = () => {
             disabled={!hasSignature || submitting}
             className="flex-1 rounded bg-green-600 py-3 text-white hover:bg-green-700 disabled:opacity-50"
           >
-            {submitting ? 'Отправка...' : 'Подтвердить получение'}
+            {submitting ? 'Отправка...' : signatureStage === 'employee' ? 'Продолжить' : 'Подтвердить получение'}
           </button>
         </div>
       </div>

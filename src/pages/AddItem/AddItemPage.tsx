@@ -60,6 +60,16 @@ type StockCheckState = {
   error?: string;
 };
 
+type AvailableSizeItem = {
+  size: string;
+  remaining: number;
+};
+
+type AvailableSizesState = {
+  loading: boolean;
+  sizes: AvailableSizeItem[];
+};
+
 const resolveImageUrl = (value?: string | null) => {
   if (!value) return '';
   if (String(value).startsWith('http://') || String(value).startsWith('https://')) {
@@ -93,6 +103,7 @@ const AddItemPage = () => {
   const [selectedPpeIds, setSelectedPpeIds] = useState<number[]>([]);
   const [ppeSizes, setPpeSizes] = useState<Record<number, string>>({});
   const [stockChecks, setStockChecks] = useState<Record<number, StockCheckState>>({});
+  const [availableSizes, setAvailableSizes] = useState<Record<number, AvailableSizesState>>({});
   const [cameraOpen, setCameraOpen] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [verifyingFace, setVerifyingFace] = useState(false);
@@ -473,8 +484,9 @@ const AddItemPage = () => {
       setFaceVerified(false);
       setFaceMessage('');
 
-      // Wait for React to render video element
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
 
       const stream = await openPreferredCameraStream();
       streamRef.current = stream;
@@ -514,14 +526,17 @@ const AddItemPage = () => {
       stopCamera();
       setCameraOpen(true);
 
-      // Wait for React to render video element after stopCamera
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
 
       const stream = await openPreferredCameraStream();
       streamRef.current = stream;
       setCameraLive(stream.getVideoTracks().some((track) => track.readyState === 'live'));
     } catch {
       setError('Tanlangan kamera ishga tushmadi');
+      setCameraOpen(false);
+      setCameraLive(false);
     }
   };
 
@@ -619,7 +634,15 @@ const AddItemPage = () => {
     });
   }, [selectedPpeIds, ppeSizes, stockChecks]);
 
-  const canSubmitWithStock = canSubmit && !hasUnavailableSize && !hasPendingSizeCheck;
+  // Check if any selected PPE is missing a required size
+  const hasMissingSize = useMemo(() => {
+    return selectedPpeIds.some((id) => {
+      const sizeValue = (ppeSizes[id] || '').trim();
+      return !sizeValue;
+    });
+  }, [selectedPpeIds, ppeSizes]);
+
+  const canSubmitWithStock = canSubmit && !hasUnavailableSize && !hasPendingSizeCheck && !hasMissingSize;
   const productsLocked = !faceVerified;
 
   useEffect(() => {
@@ -692,6 +715,36 @@ const AddItemPage = () => {
       window.clearTimeout(timerId);
     };
   }, [selectedPpeIds, ppeSizes]);
+
+  // Fetch available sizes when a product is selected
+  useEffect(() => {
+    const idsToFetch = selectedPpeIds.filter((id) => !availableSizes[id]);
+
+    if (idsToFetch.length === 0) return;
+
+    idsToFetch.forEach((id) => {
+      setAvailableSizes((prev) => ({
+        ...prev,
+        [id]: { loading: true, sizes: [] },
+      }));
+
+      axioss
+        .get(`${BASE_URL}/item-available-sizes/${id}/`)
+        .then((response) => {
+          const sizes = response.data?.available_sizes || [];
+          setAvailableSizes((prev) => ({
+            ...prev,
+            [id]: { loading: false, sizes },
+          }));
+        })
+        .catch(() => {
+          setAvailableSizes((prev) => ({
+            ...prev,
+            [id]: { loading: false, sizes: [] },
+          }));
+        });
+    });
+  }, [selectedPpeIds]);
 
   const togglePpe = (id: number) => {
     if (productsLocked) {
@@ -1008,14 +1061,64 @@ const AddItemPage = () => {
 
                               {isSelected && item.can_issue !== false && !productsLocked && (
                                 <div className="mt-2">
-                                  <label className="mb-1 block text-sm text-gray-700">Размер</label>
+                                  <label className="mb-1 block text-sm text-gray-700">
+                                    Размер <span className="text-red-500">*</span>
+                                  </label>
                                   <input
                                     type="text"
                                     value={ppeSizes[item.id] || ''}
                                     onChange={(e) => setPpeSizeValue(item.id, e.target.value)}
                                     placeholder={item.default_size ? `Введите размер (${item.default_size})` : 'Введите размер'}
-                                    className="w-full rounded border px-2 py-1 text-sm"
+                                    className={`w-full rounded border px-2 py-1 text-sm ${
+                                      !(ppeSizes[item.id] || '').trim() ? 'border-red-300' : ''
+                                    }`}
                                   />
+                                  {/* Available sizes from warehouse */}
+                                  {(() => {
+                                    const sizesState = availableSizes[item.id];
+                                    if (!sizesState) return null;
+                                    if (sizesState.loading) {
+                                      return (
+                                        <div className="mt-2 text-xs text-gray-500">
+                                          Загрузка доступных размеров...
+                                        </div>
+                                      );
+                                    }
+                                    if (sizesState.sizes.length === 0) {
+                                      return (
+                                        <div className="mt-2 text-xs text-gray-400">
+                                          На складе нет доступных размеров
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div className="mt-2">
+                                        <div className="mb-1 text-xs text-gray-500">Доступные размеры на складе:</div>
+                                        <div className="flex flex-wrap gap-1">
+                                          {sizesState.sizes.map((sizeItem) => {
+                                            const isCurrentSize = (ppeSizes[item.id] || '').trim().toLowerCase() === sizeItem.size.toLowerCase();
+                                            return (
+                                              <button
+                                                key={sizeItem.size}
+                                                type="button"
+                                                onClick={() => setPpeSizeValue(item.id, sizeItem.size)}
+                                                className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                                                  isCurrentSize
+                                                    ? 'bg-primary text-white'
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-meta-4 dark:text-gray-200 dark:hover:bg-gray-600'
+                                                }`}
+                                              >
+                                                Размер {sizeItem.size} ({sizeItem.remaining})
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                  {!(ppeSizes[item.id] || '').trim() && (
+                                    <div className="mt-1 text-xs text-red-500">Размер обязателен</div>
+                                  )}
                                   {(() => {
                                     const sizeValue = (ppeSizes[item.id] || '').trim();
                                     const defaultSize = (item.default_size || '').trim();
@@ -1079,11 +1182,13 @@ const AddItemPage = () => {
                       title={
                         !faceVerified
                           ? 'Сначала подтвердите сотрудника через камеру'
-                          : hasPendingSizeCheck
-                            ? 'Проверяется наличие размера на складе'
-                            : hasUnavailableSize
-                              ? 'Для выбранного размера нет остатка на складе'
-                              : ''
+                          : hasMissingSize
+                            ? 'Укажите размер для всех выбранных СИЗ'
+                            : hasPendingSizeCheck
+                              ? 'Проверяется наличие размера на складе'
+                              : hasUnavailableSize
+                                ? 'Для выбранного размера нет остатка на складе'
+                                : ''
                       }
                     >
                       {saving ? 'Сохранение...' : 'Добавить'}

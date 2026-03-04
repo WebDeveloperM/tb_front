@@ -14,6 +14,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
   const navigate = useNavigate()
   const sidebar = useRef<any>(null);
   const isLogin = localStorage.getItem('isLogin')
+  const role = (localStorage.getItem('role') || 'user').toLowerCase();
+  const isAdmin = role === 'admin';
   const storedSidebarExpanded = localStorage.getItem('sidebar-expanded');
   const [sidebarExpanded, setSidebarExpanded] = useState(
     storedSidebarExpanded === null ? false : storedSidebarExpanded === 'true'
@@ -37,8 +39,10 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
   return (
     <aside
       ref={sidebar}
-      className={`absolute left-0 top-0 z-9999 flex h-screen flex-col overflow-y-hidden bg-black duration-300 ease-linear dark:bg-boxdark lg:static ${sidebarOpen ? 'w-72.5 translate-x-0' : 'w-20 translate-x-0'}
-        }`}
+      className={`fixed left-0 top-0 z-50 flex h-full flex-col overflow-y-hidden bg-black duration-300 ease-linear dark:bg-boxdark
+        ${sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64'}
+        lg:static lg:min-h-screen lg:translate-x-0
+        ${sidebarOpen ? 'lg:w-72.5' : 'lg:w-20'}`}
     >
       {/* <!-- SIDEBAR HEADER --> */}
       <div className={`flex items-center gap-2 pt-5 ${sidebarOpen ? 'justify-between px-6' : 'justify-center px-2'}`}>
@@ -215,8 +219,9 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
                     'bg-graydark dark:bg-meta-4'
                     }`}
                 >
-                  <svg className="fill-current" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M9 1.5C9.41421 1.5 9.75 1.83579 9.75 2.25V8.25H15.75C16.1642 8.25 16.5 8.58579 16.5 9C16.5 9.41421 16.1642 9.75 15.75 9.75H9.75V15.75C9.75 16.1642 9.41421 16.5 9 16.5C8.58579 16.5 8.25 16.1642 8.25 15.75V9.75H2.25C1.83579 9.75 1.5 9.41421 1.5 9C1.5 8.58579 1.83579 8.25 2.25 8.25H8.25V2.25C8.25 1.83579 8.58579 1.5 9 1.5Z" fill=""/>
+                  <svg className="fill-current" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19 9H15V3H9V9H5L12 16L19 9Z" fill=""/>
+                    <path d="M5 18V20H19V18H5Z" fill=""/>
                   </svg>
                   {sidebarOpen && 'Прием СИЗ'}
                 </NavLink>
@@ -254,6 +259,26 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
                     />
                   </svg>
                   {sidebarOpen && 'Статистика'}
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/nastroyka"
+                  className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('/nastroyka') &&
+                    'bg-graydark dark:bg-meta-4'
+                    }`}
+                >
+                  <svg
+                    className="fill-current"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path d="M19.14 12.94c.04-.31.06-.62.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.22 7.22 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.62-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.31.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.22.09.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z" fill=""/>
+                  </svg>
+                  {sidebarOpen && 'Настройки'}
                 </NavLink>
               </li>
               {/* <!-- Menu Item Calendar --> */}
@@ -374,19 +399,19 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
                             </li>
                           }
 
-
-
-                          {/* <li>
-                            <NavLink
-                              to="/auth/signup"
-                              className={({ isActive }) =>
-                                'group relative flex items-center gap-2.5 rounded-md px-4 font-medium text-bodydark2 duration-300 ease-in-out hover:text-white ' +
-                                (isActive && '!text-white')
-                              }
-                            >
-                              Sign Up
-                            </NavLink>
-                          </li> */}
+                          {isLogin === 'true' && isAdmin && (
+                            <li>
+                              <NavLink
+                                to="/auth/signup"
+                                className={({ isActive }) =>
+                                  'group relative flex items-center gap-2.5 rounded-md px-4 font-medium text-bodydark2 duration-300 ease-in-out hover:text-white ' +
+                                  (isActive && '!text-white')
+                                }
+                              >
+                                Регистрация
+                              </NavLink>
+                            </li>
+                          )}
                         </ul>
                       </div>
                       {/* <!-- Dropdown Menu End --> */}
