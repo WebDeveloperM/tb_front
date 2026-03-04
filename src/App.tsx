@@ -260,16 +260,7 @@ function App() {
             </>
           }
         />
-        <Route
-          path="/auth/signin"
-          element={
-            <>
-              <PageTitle title="Войти" />
-              <SignIn />
-            </>
-          }
-        />
-        <Route
+         <Route
           path="/auth/signup"
           element={
             isAdmin ? (
@@ -282,6 +273,16 @@ function App() {
             )
           }
         />
+        <Route
+          path="/auth/signin"
+          element={
+            <>
+              <PageTitle title="Войти" />
+              <SignIn />
+            </>
+          }
+        />
+       
       </Routes>
       <ToastContainer />
     </DefaultLayout>
