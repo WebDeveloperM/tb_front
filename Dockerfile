@@ -18,8 +18,9 @@ RUN npm run build
 
 # Final stage - nginx bilan HTTPS serve
 FROM nginx:1.27-alpine
+RUN apk add --no-cache nginx-mod-stream
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 443
 

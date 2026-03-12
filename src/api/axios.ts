@@ -6,7 +6,6 @@ const axioss = axios.create({
     baseURL: BASE_URL, // Barcha so'rovlar shu URL dan boshlanadi
     withCredentials: false, // Important for CORS requests
     headers: {
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
     }
 });

@@ -8,6 +8,8 @@ services:
       - "5175:443"
     volumes:
       - ./certs:/etc/nginx/certs:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - my_network
 

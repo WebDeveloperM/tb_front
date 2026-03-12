@@ -37,6 +37,16 @@ type PendingIssueData = {
   created_at: string;
 };
 
+type CurrentUserInfo = {
+  id: number;
+  username: string;
+  firstname: string;
+  lastname: string;
+  role: 'admin' | 'warehouse_manager' | 'user' | string;
+  position?: string | null;
+  base_avatar?: string | null;
+};
+
 type SignatureStage = 'employee' | 'warehouse';
 
 const resolveImageUrl = (value?: string | null) => {
@@ -90,6 +100,7 @@ const SignaturePage = () => {
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [signatureStage, setSignatureStage] = useState<SignatureStage>('employee');
+  const [currentUser, setCurrentUser] = useState<CurrentUserInfo | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -135,6 +146,19 @@ const SignaturePage = () => {
 
     fetchData();
   }, [id, navigate]);
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await axioss.get('/users/user/');
+        setCurrentUser(response.data as CurrentUserInfo);
+      } catch {
+        setCurrentUser(null);
+      }
+    };
+
+    fetchCurrentUser();
+  }, []);
 
   // Countdown timer
   useEffect(() => {
@@ -366,6 +390,7 @@ const SignaturePage = () => {
   const employeeBaseImageUrl = resolveImageUrl(
     pendingData.employee.base_image_data || pendingData.employee.base_image,
   );
+  const currentUserAvatarUrl = resolveImageUrl(currentUser?.base_avatar || null);
 
   return (
     <div className="min-h-screen bg-slate-100 p-4">
@@ -464,6 +489,49 @@ const SignaturePage = () => {
           <h2 className="mb-3 text-lg font-semibold border-b pb-2">
             {signatureStage === 'employee' ? 'Подпись сотрудника' : 'Подпись кладовщика'}
           </h2>
+
+          {signatureStage === 'warehouse' && currentUser && (
+            <div className="mb-3 rounded border border-stroke bg-slate-50 p-3 text-sm">
+              <div className="mb-2 font-semibold text-slate-700">Текущий пользователь</div>
+              <div className="flex gap-4">
+                <div className="flex-shrink-0">
+                  {currentUserAvatarUrl ? (
+                    <img
+                      src={currentUserAvatarUrl}
+                      alt="Аватар пользователя"
+                      className="h-24 w-18 rounded border object-cover"
+                      onError={(event) => {
+                        const currentSrc = event.currentTarget.getAttribute('src');
+                        const fallbackSrc = toBackendImageUrl(currentSrc);
+                        const alreadyRetried = event.currentTarget.dataset.retryWithBackend === '1';
+
+                        if (!alreadyRetried && fallbackSrc && fallbackSrc !== currentSrc) {
+                          event.currentTarget.dataset.retryWithBackend = '1';
+                          event.currentTarget.src = fallbackSrc;
+                          return;
+                        }
+
+                        event.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="flex h-24 w-18 items-center justify-center rounded border bg-slate-100 text-xs text-gray-400">
+                      Нет фото
+                    </div>
+                  )}
+                </div>
+                <div className="grid flex-1 grid-cols-2 gap-2">
+                  <div className="text-slate-500">Фамилия:</div>
+                  <div className="font-medium">{currentUser.lastname || '-'}</div>
+                  <div className="text-slate-500">Имя:</div>
+                  <div className="font-medium">{currentUser.firstname || '-'}</div>
+                  <div className="text-slate-500">Должность:</div>
+                  <div className="font-medium">{currentUser.position || '-'}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <p className="mb-3 text-sm text-gray-600">
             {signatureStage === 'employee'
               ? 'Сотрудник ставит подпись в области ниже'

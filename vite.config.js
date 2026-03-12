@@ -8,7 +8,12 @@ export default defineConfig({
     host: '0.0.0.0', // Tashqi kirish uchun ochish
     proxy: {
       '/api': {
-        target: 'http://192.168.2.72:3000', // API manzili
+        target: 'https://192.168.2.72:8005',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/media': {
+        target: 'https://192.168.2.72:8005',
         changeOrigin: true,
         secure: false,
       },

@@ -7,16 +7,17 @@ import { OverlayPanel } from 'primereact/overlaypanel';
 import { Compyuter } from '../../types/compyuters';
 import axioss from '../../api/axios';
 import { BASE_URL } from '../../utils/urls';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { GrEdit } from 'react-icons/gr';
 import { ModalDeleteComponent } from '../Modal/ModalDelete';
 import { Calendar } from "primereact/calendar";
 import { useDebounce } from 'use-debounce';
 import { ProgressSpinner } from "primereact/progressspinner";
 import { exportToExcel } from '../../utils/excelExport';
-import { FiUserPlus, FiUpload, FiTrash2 } from 'react-icons/fi';
+import { FiUserPlus, FiTrash2 } from 'react-icons/fi';
 import { FaFileExcel } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import { getStoredFeatureAccess, normalizeFeatureAccess, normalizeRole as normalizeStoredRole, storeFeatureAccess } from '../../utils/pageAccess';
 
 interface IFilterField {
     value: any;
@@ -51,6 +52,7 @@ export default function ComputerTable({
     checkedComputer,
     setDeleteCompForChecked, isFiltered, loadingFilter = false, allEmployeeCount = 0, onShowAllEmployees
 }: Props) {
+    const navigate = useNavigate();
     const [computers, setComputers] = useState<Compyuter[]>([]);
     const [openDeleteModal, setDeleteOpenModal] = useState(false);
     const [deleteModalData, setDeleteModalData] = useState('');
@@ -58,7 +60,7 @@ export default function ComputerTable({
     const [totalCount, setTotalCount] = useState(0);
     const [searchText, setSearchText] = useState('');
     const [first, setFirst] = useState(0);
-    const [rows, setRows] = useState(50);
+    const [rows, setRows] = useState(10);
     const [nextUrl, setNextUrl] = useState(null);
     const [prevUrl, setPrevUrl] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -77,25 +79,20 @@ export default function ComputerTable({
     const [changeUserSearch, setChangeUserSearch] = useState('');
     const [historyUserOptions, setHistoryUserOptions] = useState<string[]>([]);
 
-    const parseBoolean = (value: string | null) => value === 'true';
-    const normalizeRole = (rawRole: string | null) => {
-        const value = String(rawRole || '').trim().toLowerCase();
-        if (value === 'admin' || value === 'админ') return 'admin';
-        if (value === 'warehouse_manager' || value === 'складской менеджер') return 'warehouse_manager';
-        return 'user';
-    };
+    const role = normalizeStoredRole(localStorage.getItem('role'));
+    const isHR = role === 'hr';
 
     const [canEdit, setCanEdit] = useState<boolean>(() => {
-        const role = normalizeRole(localStorage.getItem('role'));
-        return parseBoolean(localStorage.getItem('can_edit')) || role === 'admin' || role === 'warehouse_manager';
+        return getStoredFeatureAccess(role).dashboard_edit_employee;
     });
     const [canDelete, setCanDelete] = useState<boolean>(() => {
-        const role = normalizeRole(localStorage.getItem('role'));
-        return parseBoolean(localStorage.getItem('can_delete')) || role === 'admin';
+        return getStoredFeatureAccess(role).dashboard_delete_employee;
     });
-    const [canImport, setCanImport] = useState<boolean>(() => {
-        const role = normalizeRole(localStorage.getItem('role'));
-        return role === 'admin' || role === 'warehouse_manager';
+    const [canAddEmployee, setCanAddEmployee] = useState<boolean>(() => {
+        return getStoredFeatureAccess(role).dashboard_add_employee;
+    });
+    const [canExportExcel, setCanExportExcel] = useState<boolean>(() => {
+        return getStoredFeatureAccess(role).dashboard_export_excel;
     });
 
 
@@ -142,18 +139,20 @@ export default function ComputerTable({
             .get(`${BASE_URL}/users/user/`)
             .then((response) => {
                 const payload = response.data || {};
-                const role = normalizeRole(payload.role || localStorage.getItem('role'));
-                const nextCanEdit = Boolean(payload?.permissions?.can_edit) || role === 'admin' || role === 'warehouse_manager';
-                const nextCanDelete = Boolean(payload?.permissions?.can_delete) || role === 'admin';
-                const nextCanImport = role === 'admin' || role === 'warehouse_manager';
+                const role = normalizeStoredRole(payload.role || localStorage.getItem('role'));
+                const nextFeatureAccess = normalizeFeatureAccess(payload?.feature_access, role);
+                const nextCanEdit = nextFeatureAccess.dashboard_edit_employee;
+                const nextCanDelete = nextFeatureAccess.dashboard_delete_employee;
+                const nextCanAddEmployee = nextFeatureAccess.dashboard_add_employee;
+                const nextCanExportExcel = nextFeatureAccess.dashboard_export_excel;
 
                 setCanEdit(nextCanEdit);
                 setCanDelete(nextCanDelete);
-                setCanImport(nextCanImport);
+                setCanAddEmployee(nextCanAddEmployee);
+                setCanExportExcel(nextCanExportExcel);
 
                 localStorage.setItem('role', role);
-                localStorage.setItem('can_edit', String(nextCanEdit));
-                localStorage.setItem('can_delete', String(nextCanDelete));
+                storeFeatureAccess(nextFeatureAccess);
             })
             .catch((err) => {
                 console.error('Ошибка получения текущих прав пользователя:', err);
@@ -277,28 +276,30 @@ export default function ComputerTable({
         return (
             <div className="sm:col-span-1 col-span-3 flex items-center justify-center text-center">
                 <div className="flex items-center justify-center space-x-3.5">
-                    <Link
-                        to={`/item-view/${actionSlug}`}
-                        className="hover:text-primary"
-                    >
-                        <svg
-                            className="fill-current"
-                            width="18"
-                            height="18"
-                            viewBox="0 0 18 18"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
+                    {!isHR ? (
+                        <Link
+                            to={`/item-view/${actionSlug}`}
+                            className="hover:text-primary"
                         >
-                            <path
-                                d="M8.99981 14.8219C3.43106 14.8219 0.674805 9.50624 0.562305 9.28124C0.47793 9.11249 0.47793 8.88749 0.562305 8.71874C0.674805 8.49374 3.43106 3.20624 8.99981 3.20624C14.5686 3.20624 17.3248 8.49374 17.4373 8.71874C17.5217 8.88749 17.5217 9.11249 17.4373 9.28124C17.3248 9.50624 14.5686 14.8219 8.99981 14.8219ZM1.85605 8.99999C2.4748 10.0406 4.89356 13.5562 8.99981 13.5562C13.1061 13.5562 15.5248 10.0406 16.1436 8.99999C15.5248 7.95936 13.1061 4.44374 8.99981 4.44374C4.89356 4.44374 2.4748 7.95936 1.85605 8.99999Z"
-                                fill=""
-                            />
-                            <path
-                                d="M9 11.3906C7.67812 11.3906 6.60938 10.3219 6.60938 9C6.60938 7.67813 7.67812 6.60938 9 6.60938C10.3219 6.60938 11.3906 7.67813 11.3906 9C11.3906 10.3219 10.3219 11.3906 9 11.3906ZM9 7.875C8.38125 7.875 7.875 8.38125 7.875 9C7.875 9.61875 8.38125 10.125 9 10.125C9.61875 10.125 10.125 9.61875 10.125 9C10.125 8.38125 9.61875 7.875 9 7.875Z"
-                                fill=""
-                            />
-                        </svg>
-                    </Link>
+                            <svg
+                                className="fill-current"
+                                width="18"
+                                height="18"
+                                viewBox="0 0 18 18"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                                <path
+                                    d="M8.99981 14.8219C3.43106 14.8219 0.674805 9.50624 0.562305 9.28124C0.47793 9.11249 0.47793 8.88749 0.562305 8.71874C0.674805 8.49374 3.43106 3.20624 8.99981 3.20624C14.5686 3.20624 17.3248 8.49374 17.4373 8.71874C17.5217 8.88749 17.5217 9.11249 17.4373 9.28124C17.3248 9.50624 14.5686 14.8219 8.99981 14.8219ZM1.85605 8.99999C2.4748 10.0406 4.89356 13.5562 8.99981 13.5562C13.1061 13.5562 15.5248 10.0406 16.1436 8.99999C15.5248 7.95936 13.1061 4.44374 8.99981 4.44374C4.89356 4.44374 2.4748 7.95936 1.85605 8.99999Z"
+                                    fill=""
+                                />
+                                <path
+                                    d="M9 11.3906C7.67812 11.3906 6.60938 10.3219 6.60938 9C6.60938 7.67813 7.67812 6.60938 9 6.60938C10.3219 6.60938 11.3906 7.67813 11.3906 9C11.3906 10.3219 10.3219 11.3906 9 11.3906ZM9 7.875C8.38125 7.875 7.875 8.38125 7.875 9C7.875 9.61875 8.38125 10.125 9 10.125C9.61875 10.125 10.125 9.61875 10.125 9C10.125 8.38125 9.61875 7.875 9 7.875Z"
+                                    fill=""
+                                />
+                            </svg>
+                        </Link>
+                    ) : null}
                     {canEdit ? (
                         <Link to={`/edit-employee/${actionSlug}`}>
                             <GrEdit className="hover:text-primary" />
@@ -334,12 +335,22 @@ export default function ComputerTable({
         const fullName = [employee.last_name, employee.first_name].filter(Boolean).join(' ');
         if (!slug) return fullName || '—';
         return (
-            <Link
-                to={`/add-item/${slug}`}
-                className="text-blue-600 hover:text-blue-800 hover:underline"
-            >
-                {fullName || '—'}
-            </Link>
+            <>
+                {/* Desktop: add-item sahifasiga o'tadi */}
+                <Link
+                    to={`/add-item/${slug}`}
+                    className="hidden lg:block text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                    {fullName || '—'}
+                </Link>
+                {/* Mobile/Tablet: item-view sahifasiga o'tadi */}
+                <Link
+                    to={`/item-view/${slug}`}
+                    className="lg:hidden text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                    {fullName || '—'}
+                </Link>
+            </>
         );
     };
 
@@ -759,6 +770,25 @@ export default function ComputerTable({
                     >
                         Все сотрудники: {allEmployeeCount}
                     </button>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-300">Показать:</span>
+                        <select
+                            value={rows}
+                            onChange={(e) => {
+                                const newRows = Number(e.target.value);
+                                setRows(newRows);
+                                setFirst(0);
+                            }}
+                            className="h-9 rounded-md border border-stroke bg-white px-2 text-sm dark:border-strokedark dark:bg-boxdark dark:text-white"
+                        >
+                            <option value={10}>10</option>
+                            <option value={25}>25</option>
+                            <option value={50}>50</option>
+                            <option value={100}>100</option>
+                            <option value={500}>500</option>
+                            <option value={1000}>1000</option>
+                        </select>
+                    </div>
                 </div>
                 <div className="flex items-center gap-3">
                     <input
@@ -769,33 +799,33 @@ export default function ComputerTable({
                         onChange={handleImportFileChange}
                     />
 
-                    {canImport && (
-                        <Link
-                            to="/add-employee"
-                            className="flex items-center justify-center h-9 w-9 rounded-md transition-colors duration-200 bg-blue-600 hover:bg-blue-700 text-white"
+                    {canAddEmployee && (
+                        <button
+                            onClick={() => navigate('/add-employee')}
+                            className="hidden lg:flex items-center justify-center h-9 w-9 rounded-md transition-colors duration-200 bg-blue-600 hover:bg-blue-700 text-white"
                             title="Добавить сотрудника"
                         >
                             <FiUserPlus className="w-5 h-5" />
-                        </Link>
+                        </button>
                     )}
-
-
-                    <button
-                        onClick={handleExportToExcel}
-                        disabled={isExporting}
-                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors duration-200 ${isExporting
-                                ? 'bg-gray-400 cursor-not-allowed'
-                                : 'bg-green-600 hover:bg-green-700'
-                            } text-white`}
-                        title="Скачать данные в Excel"
-                        aria-label="Скачать данные в Excel"
-                    >
-                        {isExporting ? (
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                            <FaFileExcel className="w-5 h-5" />
-                        )}
-                    </button>
+                    {canExportExcel && (
+                        <button
+                            onClick={handleExportToExcel}
+                            disabled={isExporting}
+                            className={`hidden lg:flex h-9 w-9 items-center justify-center rounded-md transition-colors duration-200 ${isExporting
+                                    ? 'bg-gray-400 cursor-not-allowed'
+                                    : 'bg-green-600 hover:bg-green-700'
+                                } text-white`}
+                            title="Скачать данные в Excel"
+                            aria-label="Скачать данные в Excel"
+                        >
+                            {isExporting ? (
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                                <FaFileExcel className="w-5 h-5" />
+                            )}
+                        </button>
+                    )}
 
                     {/* Глобальный поиск */}
                     <InputText
@@ -918,6 +948,8 @@ export default function ComputerTable({
                     <Column
                         field="employee.department.name"
                         header={departmentInputHeader}
+                        className="hidden lg:table-cell"
+                        headerClassName="hidden lg:table-cell"
                         bodyStyle={{
                             whiteSpace: 'normal',
                             wordBreak: 'break-word',
@@ -932,12 +964,12 @@ export default function ComputerTable({
                             padding: '10px',
                             color: 'black',
                         }}
-
-
                     />
                     <Column
                         field="employee.section.name"
                         header={sectionInputHeader}
+                        className="hidden lg:table-cell"
+                        headerClassName="hidden lg:table-cell"
                         headerStyle={{
                             fontWeight: 'bold',
                             border: '1px solid #c8c5c4',
@@ -950,6 +982,8 @@ export default function ComputerTable({
                         field="employee.position"
                         body={typeComputerBodyTemplate}
                         header={positionInputHeader}
+                        className="hidden lg:table-cell"
+                        headerClassName="hidden lg:table-cell"
                         bodyStyle={{
                             whiteSpace: 'normal',
                             wordBreak: 'break-word',
@@ -965,60 +999,70 @@ export default function ComputerTable({
                             minWidth: '220px',
                         }}
                     />
-                    <Column
-                        field="issued_at"
-                        header={ipHeader}
-                        body={(rowData) => formatDisplayDate((rowData as any)?.issued_at)}
-                        headerStyle={{
-                            fontWeight: 'bold',
-                            border: '1px solid #c8c5c4',
-                            textAlign: 'center',
-                            padding: '10px',
-                            color: 'black',
-                        }}
-                    />
+                    {!isHR && (
+                        <Column
+                            field="issued_at"
+                            header={ipHeader}
+                            className="hidden lg:table-cell"
+                            headerClassName="hidden lg:table-cell"
+                            body={(rowData) => formatDisplayDate((rowData as any)?.issued_at)}
+                            headerStyle={{
+                                fontWeight: 'bold',
+                                border: '1px solid #c8c5c4',
+                                textAlign: 'center',
+                                padding: '10px',
+                                color: 'black',
+                            }}
+                        />
+                    )}
 
-                    <Column
-                        field="changes"
-                        header={changesHeader}
-                        body={(rowData) => (
-                            <div style={{ textAlign: 'center', fontSize: '0.8rem', lineHeight: 1.2 }}>
-                                {(rowData as any)?.history_date
-                                    ? <div>{formatDisplayDateTime((rowData as any).history_date)}</div>
-                                    : <div style={{ color: '#bbb' }}>—</div>
-                                }
-                                {(rowData as any)?.history_user
-                                    ? <div>{(rowData as any).history_user}</div>
-                                    : null
-                                }
-                            </div>
-                        )}
+                    {!isHR && (
+                        <Column
+                            field="changes"
+                            header={changesHeader}
+                            className="hidden lg:table-cell"
+                            headerClassName="hidden lg:table-cell"
+                            body={(rowData) => (
+                                <div style={{ textAlign: 'center', fontSize: '0.8rem', lineHeight: 1.2 }}>
+                                    {(rowData as any)?.history_date
+                                        ? <div>{formatDisplayDateTime((rowData as any).history_date)}</div>
+                                        : <div style={{ color: '#bbb' }}>—</div>
+                                    }
+                                    {(rowData as any)?.history_user
+                                        ? <div>{(rowData as any).history_user}</div>
+                                        : null
+                                    }
+                                </div>
+                            )}
 
-                        headerStyle={{
-                            fontWeight: 'bold',
-                            textAlign: 'center',
-                            padding: '10px',
-                            color: 'black',
-                            border: '1px solid #c8c5c4',
-                            width: '170px',
-                        }}
-                        bodyStyle={{
-                            width: '170px',
-                            minWidth: '170px',
-                            maxWidth: '170px',
-                        }}
-                        style={{
-                            width: '170px',
-                            minWidth: '170px',
-                            maxWidth: '170px',
-                        }}
-                    />
+                            headerStyle={{
+                                fontWeight: 'bold',
+                                textAlign: 'center',
+                                padding: '10px',
+                                color: 'black',
+                                border: '1px solid #c8c5c4',
+                                width: '170px',
+                            }}
+                            bodyStyle={{
+                                width: '170px',
+                                minWidth: '170px',
+                                maxWidth: '170px',
+                            }}
+                            style={{
+                                width: '170px',
+                                minWidth: '170px',
+                                maxWidth: '170px',
+                            }}
+                        />
+                    )}
 
 
 
                     <Column
                         field="actions"
                         header={actionsHeader}
+                        className="hidden lg:table-cell"
+                        headerClassName="hidden lg:table-cell"
                         body={isDetail}
                         headerStyle={{
                             fontWeight: 'bold',

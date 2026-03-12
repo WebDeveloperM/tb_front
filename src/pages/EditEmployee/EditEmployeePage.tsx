@@ -11,6 +11,7 @@ import { BASE_IMAGE_URL, BASE_URL } from '../../utils/urls';
 import { isAuthenticated } from '../../utils/auth';
 import { ModalDataInput } from '../../components/Input/ModalDataInput';
 import ViewPO from '../ViewCompyuter/ViewPO';
+import { getStoredFeatureAccess, normalizeRole } from '../../utils/pageAccess';
 
 type ItemDetail = {
   slug?: string;
@@ -83,6 +84,12 @@ const resolveImageUrl = (value?: string | null) => {
 const EditEmployeePage = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
+
+  const role = normalizeRole(localStorage.getItem('role'));
+  const featureAccess = getStoredFeatureAccess(role);
+  const canEditEmployee = featureAccess.dashboard_edit_employee;
+  const canViewEmployeePPETab = featureAccess.employee_ppe_tab;
+
   const [itemDetail, setItemDetail] = useState<ItemDetail | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [baseImageFile, setBaseImageFile] = useState<File | null>(null);
@@ -661,6 +668,10 @@ const EditEmployeePage = () => {
     return <Navigate to="/auth/signin" />;
   }
 
+  if (!canEditEmployee) {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <>
       <Breadcrumb pageName="Редактирование сотрудника" />
@@ -949,9 +960,11 @@ const EditEmployeePage = () => {
                     </div>
                   </div>
                 </Tabs.Item>
-                <Tabs.Item title="Средства защиты">
-                  <ViewPO />
-                </Tabs.Item>
+                {canViewEmployeePPETab && (
+                  <Tabs.Item title="Средства защиты">
+                    <ViewPO />
+                  </Tabs.Item>
+                )}
               </Tabs>
             </div>
 

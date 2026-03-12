@@ -16,6 +16,7 @@ import Alerts from './pages/UiElements/Alerts';
 import Buttons from './pages/UiElements/Buttons';
 import DefaultLayout from './layout/DefaultLayout';
 import Main from './pages/Dashboard/Main';
+import DueSoonPage from './pages/Dashboard/DueSoonPage';
 import AddCompyuter from './pages/AddCompyuter/AddCompyuter';
 import 'antd/dist/reset.css';
 import { ToastContainer } from 'react-toastify';
@@ -25,18 +26,57 @@ import AddItemPage from './pages/AddItem/AddItemPage.tsx';
 import EditEmployeePage from './pages/EditEmployee/EditEmployeePage.tsx';
 import AddEmployeePage from './pages/AddEmployee/AddEmployeePage.tsx';
 import StatisticsPage from './pages/Statistics';
+import StatisticsDetailsPage from './pages/Statistics/DetailsPage';
 import PPEArrivalPage from './pages/PPEArrival';
 import SignaturePage from './pages/Signature/SignaturePage.tsx';
 import NastroykaPage from './pages/Nastroyka';
+import DepartmentPage from './pages/Nastroyka/DepartmentPage';
+import SectionPage from './pages/Nastroyka/SectionPage';
+import ProductPage from './pages/Nastroyka/ProductPage';
+import PersonPage from './pages/Nastroyka/PersonPage';
+import UserPage from './pages/Nastroyka/UserPage';
+import FaceIDPage from './pages/Nastroyka/FaceIDPage';
+import PageAccessPage from './pages/Nastroyka/PageAccessPage';
 import 'primeicons/primeicons.css';
 import { isAuthenticated } from './utils/auth';
+import axioss from './api/axios';
+import {
+  clearStoredPageAccess,
+  getDefaultFeatureAccess,
+  getDefaultPageAccess,
+  getFirstAccessibleRoute,
+  getStoredPageAccess,
+  normalizeFeatureAccess,
+  normalizePageAccess,
+  normalizeRole,
+  storeFeatureAccess,
+  PageAccess,
+  FeatureAccess,
+  NormalizedRole,
+  storePageAccess,
+} from './utils/pageAccess';
 
 
 function App() {
   const [loading, setLoading] = useState<boolean>(true);
+  const [authResolved, setAuthResolved] = useState<boolean>(false);
+  const [trustedRole, setTrustedRole] = useState<NormalizedRole>('user');
+  const [pageAccess, setPageAccess] = useState<PageAccess>(() => getStoredPageAccess('user'));
+  const [featureAccess, setFeatureAccess] = useState<FeatureAccess>(() => getDefaultFeatureAccess('user'));
   const { pathname } = useLocation();
-  const role = (localStorage.getItem('role') || 'user').toLowerCase();
-  const isAdmin = role === 'admin';
+
+  const canAccessDashboard = pageAccess.dashboard;
+  const canAccessPPEArrival = pageAccess.ppe_arrival;
+  const canAccessStatistics = pageAccess.statistics;
+  const canAccessSettings = pageAccess.settings;
+  const canAccessDueSoonDetails = featureAccess.dashboard_due_cards;
+  const canAccessAddEmployee = featureAccess.dashboard_add_employee;
+  const canAccessEditEmployee = featureAccess.dashboard_edit_employee;
+  const canAccessFaceIdControl = featureAccess.face_id_control;
+  const isAdmin = trustedRole === 'admin';
+  const fallbackRoute = getFirstAccessibleRoute(pageAccess) || '/no-access';
+
+  const getDeniedRoute = () => (fallbackRoute === pathname ? '/no-access' : fallbackRoute);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -46,18 +86,71 @@ function App() {
     setTimeout(() => setLoading(false), 1000);
   }, []);
 
+  useEffect(() => {
+    const syncTrustedRole = async () => {
+      if (!isAuthenticated()) {
+        setTrustedRole('user');
+        setPageAccess(getDefaultPageAccess('user'));
+        setFeatureAccess(getDefaultFeatureAccess('user'));
+        clearStoredPageAccess();
+        setAuthResolved(true);
+        return;
+      }
 
-  return loading ? (
+      try {
+        const response = await axioss.get('/users/user/');
+        const serverRole = normalizeRole(response?.data?.role || 'user');
+        const firstName = String(response?.data?.firstname || '');
+        const lastName = String(response?.data?.lastname || '');
+        const username = String(response?.data?.username || localStorage.getItem('username') || '');
+        const permissions = response?.data?.permissions || {};
+        const nextPageAccess = normalizePageAccess(response?.data?.page_access, serverRole);
+        const nextFeatureAccess = normalizeFeatureAccess(response?.data?.feature_access, serverRole);
+
+        setTrustedRole(serverRole);
+        setPageAccess(nextPageAccess);
+        setFeatureAccess(nextFeatureAccess);
+        localStorage.setItem('role', serverRole);
+        localStorage.setItem('can_edit', String(Boolean(permissions?.can_edit)));
+        localStorage.setItem('can_delete', String(Boolean(permissions?.can_delete)));
+        localStorage.setItem('firstname', firstName);
+        localStorage.setItem('lastname', lastName);
+        localStorage.setItem('username', username);
+        storePageAccess(nextPageAccess);
+        storeFeatureAccess(nextFeatureAccess);
+      } catch {
+        setTrustedRole('user');
+        setPageAccess(getDefaultPageAccess('user'));
+        setFeatureAccess(getDefaultFeatureAccess('user'));
+        clearStoredPageAccess();
+      } finally {
+        setAuthResolved(true);
+      }
+    };
+
+    syncTrustedRole();
+  }, [pathname]);
+
+
+  return loading || !authResolved ? (
     <Loader />
   ) : (
     <DefaultLayout>
       <Routes>
         <Route
           index element={
-            <>
-              <PageTitle title="Главная страница" />
-              <Main />
-            </>
+            isAuthenticated() ? (
+              canAccessDashboard ? (
+                <>
+                  <PageTitle title="Главная страница" />
+                  <Main />
+                </>
+              ) : (
+                <Navigate to={getDeniedRoute()} replace />
+              )
+            ) : (
+              <Navigate to="/auth/signin" replace />
+            )
           }
         />
         <Route
@@ -90,10 +183,14 @@ function App() {
         <Route
           path={`/edit-employee/:slug`}
           element={
-            <>
-              <PageTitle title="Редактирование сотрудника" />
-              <EditEmployeePage />
-            </>
+            isAuthenticated() && canAccessEditEmployee ? (
+              <>
+                <PageTitle title="Редактирование сотрудника" />
+                <EditEmployeePage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
           }
         />
         <Route
@@ -125,49 +222,184 @@ function App() {
         <Route
           path="/add-employee"
           element={
-            <>
-              <PageTitle title="Добавить сотрудника" />
-              <AddEmployeePage />
-            </>
+            isAuthenticated() && canAccessAddEmployee ? (
+              <>
+                <PageTitle title="Добавить сотрудника" />
+                <AddEmployeePage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
           }
         />
         <Route
           path="/ppe-arrival"
           element={
-            isAuthenticated() ? (
+            isAuthenticated() && canAccessPPEArrival ? (
               <>
                 <PageTitle title="Прием СИЗ" />
                 <PPEArrivalPage />
               </>
             ) : (
-              <Navigate to="/auth/signin" replace />
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
+          }
+        />
+        <Route
+          path="/dashboard/due-soon"
+          element={
+            isAuthenticated() && canAccessDashboard && canAccessDueSoonDetails ? (
+              <>
+                <PageTitle title="Кому скоро нужен СИЗ" />
+                <DueSoonPage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
             )
           }
         />
         <Route
           path="/statistics"
           element={
-            isAuthenticated() ? (
+            isAuthenticated() && canAccessStatistics ? (
               <>
                 <PageTitle title="Статистика" />
                 <StatisticsPage />
               </>
             ) : (
-              <Navigate to="/auth/signin" replace />
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
+          }
+        />
+        <Route
+          path="/statistics/:detailsType/:productId"
+          element={
+            isAuthenticated() && canAccessStatistics ? (
+              <>
+                <PageTitle title="Детали статистики" />
+                <StatisticsDetailsPage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
             )
           }
         />
         <Route
           path="/nastroyka"
           element={
-            isAuthenticated() ? (
+            isAuthenticated() && canAccessSettings ? (
               <>
                 <PageTitle title="Настройки" />
                 <NastroykaPage />
               </>
             ) : (
-              <Navigate to="/auth/signin" replace />
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
             )
+          }
+        />
+        <Route
+          path="/nastroyka/department"
+          element={
+            isAuthenticated() && canAccessSettings ? (
+              <>
+                <PageTitle title="Цех" />
+                <DepartmentPage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
+          }
+        />
+        <Route
+          path="/nastroyka/section"
+          element={
+            isAuthenticated() && canAccessSettings ? (
+              <>
+                <PageTitle title="Отдел" />
+                <SectionPage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
+          }
+        />
+        <Route
+          path="/nastroyka/product"
+          element={
+            isAuthenticated() && canAccessSettings ? (
+              <>
+                <PageTitle title="Средство инд. защиты" />
+                <ProductPage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
+          }
+        />
+        <Route
+          path="/nastroyka/person"
+          element={
+            isAuthenticated() && canAccessSettings ? (
+              <>
+                <PageTitle title="Ответственное лицо" />
+                <PersonPage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
+          }
+        />
+        <Route
+          path="/nastroyka/user"
+          element={
+            isAuthenticated() && canAccessSettings && isAdmin ? (
+              <>
+                <PageTitle title="Пользователи" />
+                <UserPage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
+          }
+        />
+        <Route
+          path="/nastroyka/page-access"
+          element={
+            isAuthenticated() && canAccessSettings && isAdmin ? (
+              <>
+                <PageTitle title="Доступ к страницам" />
+                <PageAccessPage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
+          }
+        />
+        <Route
+          path="/nastroyka/faceid"
+          element={
+            isAuthenticated() && canAccessSettings && canAccessFaceIdControl ? (
+              <>
+                <PageTitle title="Face ID настройки" />
+                <FaceIDPage />
+              </>
+            ) : (
+              <Navigate to={isAuthenticated() ? getDeniedRoute() : '/auth/signin'} replace />
+            )
+          }
+        />
+        <Route
+          path="/no-access"
+          element={
+            <>
+              <PageTitle title="Нет доступа" />
+              <div className="rounded-sm border border-stroke bg-white p-6 shadow-default dark:border-strokedark dark:bg-boxdark">
+                <h1 className="text-lg font-semibold text-black dark:text-white">Нет доступа к разделам меню</h1>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  Для вашей роли администратор отключил все основные разделы. Обратитесь к администратору системы.
+                </p>
+              </div>
+            </>
           }
         />
         <Route

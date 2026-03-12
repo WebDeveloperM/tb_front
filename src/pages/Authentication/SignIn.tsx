@@ -8,6 +8,7 @@ import { BASE_URL } from '../../utils/urls'
 import { ToastContainer, toast } from 'react-toastify';
 import axios from 'axios'
 import { RiLockPasswordLine } from "react-icons/ri";
+import { normalizeFeatureAccess, normalizePageAccess, normalizeRole, storeFeatureAccess, storePageAccess } from '../../utils/pageAccess';
 
 const SignIn: React.FC = () => {
 
@@ -19,6 +20,7 @@ const SignIn: React.FC = () => {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraLive, setCameraLive] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [faceVerifyError, setFaceVerifyError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [_, setResData] = useState("");
@@ -46,6 +48,55 @@ const SignIn: React.FC = () => {
     };
   }, []);
 
+  const pickPreferredFrontCamera = (devices: MediaDeviceInfo[]) => {
+    if (!devices.length) return '';
+    const frontKeywords = ['front', 'user', 'face', 'facetime', 'selfie', 'frontal'];
+    const integratedKeywords = ['integrated', 'internal', 'built-in', 'default'];
+    const rearKeywords = ['back', 'rear', 'environment', 'world', 'traseira'];
+
+    const frontDevice = devices.find((device) => {
+      const label = String(device.label || '').toLowerCase();
+      const hasFrontKeyword = frontKeywords.some((keyword) => label.includes(keyword));
+      const hasRearKeyword = rearKeywords.some((keyword) => label.includes(keyword));
+      return hasFrontKeyword && !hasRearKeyword;
+    });
+
+    if (frontDevice) return frontDevice.deviceId;
+
+    const integratedDevice = devices.find((device) => {
+      const label = String(device.label || '').toLowerCase();
+      const hasIntegratedKeyword = integratedKeywords.some((keyword) => label.includes(keyword));
+      const hasRearKeyword = rearKeywords.some((keyword) => label.includes(keyword));
+      return hasIntegratedKeyword && !hasRearKeyword;
+    });
+
+    if (integratedDevice) return integratedDevice.deviceId;
+    return devices[0].deviceId;
+  };
+
+  const loadVideoDevices = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return [] as MediaDeviceInfo[];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter((device) => device.kind === 'videoinput');
+
+    if (!selectedDeviceId || !cameras.some((camera) => camera.deviceId === selectedDeviceId)) {
+      setSelectedDeviceId(pickPreferredFrontCamera(cameras));
+    }
+
+    return cameras;
+  };
+
+  const isRearFacingStream = (stream: MediaStream) => {
+    const track = stream.getVideoTracks()[0];
+    if (!track) return false;
+
+    const facingMode = String(track.getSettings?.().facingMode || '').toLowerCase();
+    if (facingMode === 'environment') return true;
+
+    const label = String(track.label || '').toLowerCase();
+    return ['back', 'rear', 'environment', 'world', 'traseira'].some((keyword) => label.includes(keyword));
+  };
+
   useEffect(() => {
     if (faceModalOpen) {
       setFaceCapture('');
@@ -56,6 +107,107 @@ const SignIn: React.FC = () => {
     stopCamera();
   }, [faceModalOpen]);
 
+  const openStreamForDevice = async (deviceId: string) => {
+    const deviceConstraints: MediaStreamConstraints[] = [
+      {
+        video: {
+          deviceId: { exact: deviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      },
+      {
+        video: {
+          deviceId: { ideal: deviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      },
+    ];
+
+    let lastError: unknown = null;
+
+    for (const constraints of deviceConstraints) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (cameraError) {
+        lastError = cameraError;
+      }
+    }
+
+    throw lastError;
+  };
+
+  const getFaceIdCameraStream = async () => {
+    let cameras = await loadVideoDevices();
+
+    if (!cameras.length || cameras.every((camera) => !camera.label)) {
+      const warmupStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      });
+      warmupStream.getTracks().forEach((track) => track.stop());
+      cameras = await loadVideoDevices();
+    }
+
+    const preferredDeviceId = selectedDeviceId || pickPreferredFrontCamera(cameras);
+    const preferredConstraints: MediaStreamConstraints[] = [
+      {
+        video: {
+          facingMode: { exact: 'user' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      },
+      {
+        video: {
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      },
+      {
+        video: preferredDeviceId
+          ? {
+              deviceId: { ideal: preferredDeviceId },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            }
+          : {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+        audio: false,
+      },
+      {
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      },
+    ];
+
+    let lastError: unknown = null;
+
+    for (const constraints of preferredConstraints) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!isRearFacingStream(stream) || !preferredDeviceId) {
+          return stream;
+        }
+
+        stream.getTracks().forEach((track) => track.stop());
+        return await openStreamForDevice(preferredDeviceId);
+      } catch (cameraError) {
+        lastError = cameraError;
+      }
+    }
+
+    throw lastError;
+  };
+
   const startCamera = async () => {
     try {
       setCameraError('');
@@ -65,10 +217,7 @@ const SignIn: React.FC = () => {
         window.requestAnimationFrame(() => resolve());
       });
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
+      const stream = await getFaceIdCameraStream();
 
       if (!videoRef.current) {
         stream.getTracks().forEach((track) => track.stop());
@@ -107,7 +256,6 @@ const SignIn: React.FC = () => {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     setFaceCapture(dataUrl);
     setFaceVerifyError('');
-    toast.success('Face ID кадр сохранён');
 
     await performLogin(true, dataUrl);
   };
@@ -122,15 +270,21 @@ const SignIn: React.FC = () => {
   };
 
   const persistLoginData = (response: any) => {
+    const nextRole = normalizeRole(response.data.role || 'user');
+    const nextPageAccess = normalizePageAccess(response.data?.page_access, nextRole);
+    const nextFeatureAccess = normalizeFeatureAccess(response.data?.feature_access, nextRole);
+
     setResData(response.data);
     localStorage.setItem("token", response.data.token)
     localStorage.setItem("expires_at", response.data.expires_at)
     localStorage.setItem("firstname", response.data.firstname)
     localStorage.setItem("lastname", response.data.lastname)
     localStorage.setItem("username", response.data.username || username)
-    localStorage.setItem("role", response.data.role || "user")
+    localStorage.setItem("role", nextRole)
     localStorage.setItem("can_edit", String(Boolean(response.data?.permissions?.can_edit)))
     localStorage.setItem("can_delete", String(Boolean(response.data?.permissions?.can_delete)))
+    storePageAccess(nextPageAccess)
+    storeFeatureAccess(nextFeatureAccess)
     localStorage.setItem("isLogin", "true")
   };
 
@@ -401,12 +555,12 @@ const SignIn: React.FC = () => {
 
       {faceModalOpen && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 px-4">
-          <div className="w-1/2 rounded-lg bg-white p-4 shadow-xl dark:bg-boxdark">
+          <div className="w-full md:w-1/2 rounded-lg bg-white p-4 shadow-xl dark:bg-boxdark">
             <h3 className="mb-3 text-lg font-semibold text-black dark:text-white">Face ID подтверждение</h3>
             {faceTargetUser ? (
               <p className="mb-2 text-sm font-medium text-black dark:text-white">Пользователь: {faceTargetUser}</p>
             ) : null}
-            <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">Для admin/кладовщика вход подтверждается по Face ID.</p>
+            <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">Для admin, складского менеджера и складского рабочего вход подтверждается по Face ID.</p>
 
             {!cameraOpen ? (
               <div className="rounded border border-stroke px-3 py-2 text-sm text-slate-600 dark:border-strokedark dark:text-slate-300">

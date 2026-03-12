@@ -59,21 +59,41 @@ const SignUp = () => {
     };
   }, [avatarPreview]);
 
-  const pickPreferredExternalCamera = (devices: MediaDeviceInfo[]) => {
+  const pickPreferredFrontCamera = (devices: MediaDeviceInfo[]) => {
     if (!devices.length) return '';
-    const externalKeywords = ['usb', 'webcam', 'logitech', 'external', 'hd pro'];
-    const integratedKeywords = ['integrated', 'internal', 'built-in', 'facetime', 'default'];
+    const frontKeywords = ['front', 'user', 'face', 'facetime', 'selfie'];
+    const integratedKeywords = ['integrated', 'internal', 'built-in', 'default'];
+    const rearKeywords = ['back', 'rear', 'environment', 'world'];
 
-    const externalDevice = devices.find((device) => {
+    const frontDevice = devices.find((device) => {
       const label = String(device.label || '').toLowerCase();
-      const hasExternalKeyword = externalKeywords.some((keyword) => label.includes(keyword));
-      const hasIntegratedKeyword = integratedKeywords.some((keyword) => label.includes(keyword));
-      return hasExternalKeyword && !hasIntegratedKeyword;
+      const hasFrontKeyword = frontKeywords.some((keyword) => label.includes(keyword));
+      const hasRearKeyword = rearKeywords.some((keyword) => label.includes(keyword));
+      return hasFrontKeyword && !hasRearKeyword;
     });
 
-    if (externalDevice) return externalDevice.deviceId;
-    if (devices.length > 1) return devices[devices.length - 1].deviceId;
+    if (frontDevice) return frontDevice.deviceId;
+
+    const integratedDevice = devices.find((device) => {
+      const label = String(device.label || '').toLowerCase();
+      const hasIntegratedKeyword = integratedKeywords.some((keyword) => label.includes(keyword));
+      const hasRearKeyword = rearKeywords.some((keyword) => label.includes(keyword));
+      return hasIntegratedKeyword && !hasRearKeyword;
+    });
+
+    if (integratedDevice) return integratedDevice.deviceId;
     return devices[0].deviceId;
+  };
+
+  const isRearFacingStream = (stream: MediaStream) => {
+    const track = stream.getVideoTracks()[0];
+    if (!track) return false;
+
+    const facingMode = String(track.getSettings?.().facingMode || '').toLowerCase();
+    if (facingMode === 'environment') return true;
+
+    const label = String(track.label || '').toLowerCase();
+    return ['back', 'rear', 'environment', 'world', 'traseira'].some((keyword) => label.includes(keyword));
   };
 
   const loadVideoDevices = async () => {
@@ -83,7 +103,7 @@ const SignUp = () => {
     setVideoDevices(cameras);
 
     if (!selectedDeviceId || !cameras.some((camera) => camera.deviceId === selectedDeviceId)) {
-      setSelectedDeviceId(pickPreferredExternalCamera(cameras));
+      setSelectedDeviceId(pickPreferredFrontCamera(cameras));
     }
 
     return cameras;
@@ -110,35 +130,120 @@ const SignUp = () => {
     return hasLiveTrack;
   };
 
+  const openStreamForDevice = async (deviceId: string) => {
+    const deviceConstraints: MediaStreamConstraints[] = [
+      {
+        video: {
+          deviceId: { exact: deviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      },
+      {
+        video: {
+          deviceId: { ideal: deviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      },
+    ];
+
+    let lastError: unknown = null;
+
+    for (const constraints of deviceConstraints) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (cameraError) {
+        lastError = cameraError;
+      }
+    }
+
+    throw lastError;
+  };
+
   const openPreferredCameraStream = async () => {
     let cameras = await loadVideoDevices();
 
     if (!cameras.length || cameras.every((camera) => !camera.label)) {
-      const warmupStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const warmupStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      });
       warmupStream.getTracks().forEach((track) => track.stop());
       cameras = await loadVideoDevices();
     }
 
-    const preferredDeviceId = selectedDeviceId || pickPreferredExternalCamera(cameras);
-    const primaryConstraints: MediaStreamConstraints = {
-      video: preferredDeviceId
-        ? {
-            deviceId: { ideal: preferredDeviceId },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          }
-        : {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+    const preferredDeviceId = selectedDeviceId || pickPreferredFrontCamera(cameras);
+    const constraintsList: MediaStreamConstraints[] = selectedDeviceId
+      ? [
+          {
+            video: {
+              deviceId: { exact: preferredDeviceId },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
           },
-      audio: false,
-    };
+          {
+            video: {
+              deviceId: { ideal: preferredDeviceId },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          },
+        ]
+      : [
+          {
+            video: {
+              facingMode: { exact: 'user' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          },
+          {
+            video: {
+              facingMode: 'user',
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          },
+          {
+            video: preferredDeviceId
+              ? {
+                  deviceId: { ideal: preferredDeviceId },
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                }
+              : {
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                },
+            audio: false,
+          },
+        ];
 
-    try {
-      return await navigator.mediaDevices.getUserMedia(primaryConstraints);
-    } catch {
-      return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    let lastError: unknown = null;
+
+    for (const constraints of constraintsList) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!isRearFacingStream(stream) || !preferredDeviceId) {
+          return stream;
+        }
+
+        stream.getTracks().forEach((track) => track.stop());
+        return await openStreamForDevice(preferredDeviceId);
+      } catch (cameraError) {
+        lastError = cameraError;
+      }
     }
+
+    throw lastError;
   };
 
   const startCamera = async () => {
@@ -219,7 +324,6 @@ const SignUp = () => {
     if (!baseAvatarFile) {
       setAvatarPreview(dataUrl);
     }
-    toast.success('Face ID кадр сохранён');
   };
 
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {

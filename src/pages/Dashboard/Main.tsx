@@ -4,9 +4,10 @@ import { BASE_URL } from '../../utils/urls';
 import { Compyuter, InfoComputerData } from '../../types/compyuters';
 import axioss from '../../api/axios';
 import { isAuthenticated } from '../../utils/auth';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import ComputerTable from '../../components/Tables/DataTable';
 import Skeleton from '../../components/Skeleton/Skeleton';
+import { getStoredFeatureAccess, normalizeRole } from '../../utils/pageAccess';
 
 const PPEHelmetGogglesIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg
@@ -36,10 +37,19 @@ const OverdueWarningIcon: React.FC<{ className?: string }> = ({ className }) => 
 );
 
 const Main: React.FC = () => {
+    const navigate = useNavigate();
     const [computerData, setComputerData] = useState<Compyuter[]>([])
     const [selectKey, setSelectKey] = useState<string | null>("")
     const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
     const [dueMonths, setDueMonths] = useState<number>(1)
+    const [isMobileOrTablet, setIsMobileOrTablet] = useState(() =>
+        typeof window !== 'undefined' ? window.innerWidth < 640 : false,
+    );
+
+    // Role check
+    const role = normalizeRole(localStorage.getItem('role'));
+    const featureAccess = getStoredFeatureAccess(role);
+    const canViewDueCards = featureAccess.dashboard_due_cards;
 
     const formatMonthWord = (count: number) => {
         const mod10 = count % 10;
@@ -76,6 +86,13 @@ const Main: React.FC = () => {
     const [loadingFilter, setLoadingFilter] = useState(false);
     const [isCardFilterLoading, setIsCardFilterLoading] = useState(false);
 
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const onResize = () => setIsMobileOrTablet(window.innerWidth < 640);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     useEffect(() => {
         if (!token) return
@@ -133,66 +150,85 @@ const Main: React.FC = () => {
             {infoCompData ?
                 <>
                     <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <div className="text-base font-medium text-black dark:text-white text-[20px]">
-                            До истечения срока осталось {dueMonths} {formatMonthWord(dueMonths)}
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm text-slate-600 dark:text-slate-300">Период:</span>
-                            <select
-                                value={dueMonths}
-                                onChange={(event) => {
-                                    setDueMonths(Number(event.target.value));
-                                    handleSelectKey(null);
-                                }}
-                                className="rounded border border-stroke bg-white px-3 py-1.5 text-sm dark:border-strokedark dark:bg-boxdark"
-                            >
-                                <option value={1}>1 месяц</option>
-                                <option value={2}>2 месяца</option>
-                                <option value={3}>3 месяца</option>
-                                <option value={6}>6 месяцев</option>
-                                <option value={12}>12 месяцев</option>
-                            </select>
-                        </div>
+                        {canViewDueCards ? (
+                            <div>
+                                <div className="text-base font-medium text-black dark:text-white text-[20px]">
+                                    До истечения срока осталось {dueMonths} {formatMonthWord(dueMonths)}
+                                </div>
+                                <div className="text-sm text-slate-500 dark:text-slate-300">
+                                    Откройте детальный список, чтобы увидеть сотрудника, размер и нужный СИЗ.
+                                </div>
+                            </div>
+                        ) : (
+                            <span></span>
+                        )}
+                        {canViewDueCards ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm text-slate-600 dark:text-slate-300">Период:</span>
+                                <select
+                                    value={dueMonths}
+                                    onChange={(event) => {
+                                        setDueMonths(Number(event.target.value));
+                                        handleSelectKey(null);
+                                    }}
+                                    className="rounded border border-stroke bg-white px-3 py-1.5 text-sm dark:border-strokedark dark:bg-boxdark"
+                                >
+                                    <option value={1}>1 месяц</option>
+                                    <option value={2}>2 месяца</option>
+                                    <option value={3}>3 месяца</option>
+                                    <option value={6}>6 месяцев</option>
+                                    <option value={12}>12 месяцев</option>
+                                </select>
+                                <button
+                                    type="button"
+                                    onClick={() => navigate(`/dashboard/due-soon?dueMonths=${dueMonths}`)}
+                                    className="rounded border border-primary px-3 py-1.5 text-sm font-medium text-primary transition hover:bg-primary hover:text-white"
+                                >
+                                    Детальный список
+                                </button>
+                            </div>
+                        ) : null}
                     </div>
 
 
 
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7">
-                        {(infoCompData?.due_products || []).map((product) => {
-                            const cardKey = `ppe:${product.id}`;
-                            const count = product.due_count ?? 0;
+                    <div className="hidden lg:grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7">
+                        {canViewDueCards && (
+                            <>
+                                {(infoCompData?.due_products || []).map((product) => {
+                                    const cardKey = `ppe:${product.id}`;
+                                    const count = product.due_count ?? 0;
 
-                            return (
+                                    return (
+                                        <CardDataStats
+                                            key={cardKey}
+                                            title={product.name}
+                                            total={`${count}`}
+                                            clickKey={cardKey}
+                                            setSelectKey={handleSelectKey}
+                                            isLoading={isCardFilterLoading && selectKey === cardKey}
+                                            isActive={selectKey === cardKey}
+                                        >
+                                            <PPEHelmetGogglesIcon className="h-7 w-7 text-primary dark:text-white" />
+                                        </CardDataStats>
+                                    );
+                                })}
+
+                                {/* Overdue card */}
                                 <CardDataStats
-                                    key={cardKey}
-                                    title={product.name}
-                                    total={`${count}`}
-                                    clickKey={cardKey}
+                                    key="overdue"
+                                    title="Срок истек"
+                                    total={`${infoCompData?.overdue_count ?? 0}`}
+                                    clickKey="overdue"
                                     setSelectKey={handleSelectKey}
-                                    isLoading={isCardFilterLoading && selectKey === cardKey}
-                                    isActive={selectKey === cardKey}
+                                    isLoading={isCardFilterLoading && selectKey === 'overdue'}
+                                    isActive={selectKey === 'overdue'}
+                                    titleClassName="text-red-500 dark:text-red-400"
                                 >
-                                    <PPEHelmetGogglesIcon className="h-7 w-7 text-primary dark:text-white" />
+                                    <OverdueWarningIcon className="h-7 w-7 text-red-500 dark:text-red-400" />
                                 </CardDataStats>
-                            );
-                        })}
-
-                        {/* Overdue card */}
-                        <CardDataStats
-                            key="overdue"
-                            title="Срок истек"
-                            total={`${infoCompData?.overdue_count ?? 0}`}
-                            clickKey="overdue"
-                            setSelectKey={handleSelectKey}
-                            isLoading={isCardFilterLoading && selectKey === 'overdue'}
-                            isActive={selectKey === 'overdue'}
-                            titleClassName="text-red-500 dark:text-red-400"
-                        >
-                            <OverdueWarningIcon className="h-7 w-7 text-red-500 dark:text-red-400" />
-                        </CardDataStats>
-
-                        
-
+                            </>
+                        )}
                     </div>
 
                     <div className='mt-6'>

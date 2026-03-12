@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import SidebarLinkGroup from './SidebarLinkGroup';
 import Logo from '../../images/logo/logo.png';
+import { getFirstAccessibleRoute, getStoredFeatureAccess, getStoredPageAccess, normalizeRole } from '../../utils/pageAccess';
 
 interface SidebarProps {
   sidebarOpen: boolean;
@@ -14,8 +15,116 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
   const navigate = useNavigate()
   const sidebar = useRef<any>(null);
   const isLogin = localStorage.getItem('isLogin')
-  const role = (localStorage.getItem('role') || 'user').toLowerCase();
+  const role = normalizeRole(localStorage.getItem('role'));
+  const pageAccess = getStoredPageAccess(role);
+  const featureAccess = getStoredFeatureAccess(role);
+  const firstAccessibleRoute = getFirstAccessibleRoute(pageAccess) || '/no-access';
   const isAdmin = role === 'admin';
+  const canSeeDashboard = pageAccess.dashboard;
+  const canSeeSettings = pageAccess.settings;
+  const canSeePPEArrival = pageAccess.ppe_arrival;
+  const canSeeStatistics = pageAccess.statistics;
+  const canEditBaseSettings = role === 'admin' || role === 'warehouse_staff';
+  const canManageFaceIdControl = featureAccess.face_id_control;
+  const isSettingsRoute = pathname === '/nastroyka' || pathname.startsWith('/nastroyka/');
+  const settingsMenuItems = [
+    canEditBaseSettings
+      ? {
+          to: '/nastroyka/department',
+          label: 'Цех',
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 21H21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M5 21V6.5C5 5.67157 5.67157 5 6.5 5H11V10L14 8.5L17 10V5H17.5C18.3284 5 19 5.67157 19 6.5V21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M8 14H10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M8 17H10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M14 14H16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+          ),
+        }
+      : null,
+    canEditBaseSettings
+      ? {
+          to: '/nastroyka/section',
+          label: 'Отдел',
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 20V8.5C4 7.67157 4.67157 7 5.5 7H9V20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M9 20V4.5C9 3.67157 9.67157 3 10.5 3H18.5C19.3284 3 20 3.67157 20 4.5V20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M13 7H16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M13 11H16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M13 15H16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+          ),
+        }
+      : null,
+    canEditBaseSettings
+      ? {
+          to: '/nastroyka/product',
+          label: 'Средство инд. защиты',
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 3L19 6V11C19 15.4183 16.1402 19.3007 12 21C7.85979 19.3007 5 15.4183 5 11V6L12 3Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+              <path d="M9.5 12L11.2 13.7L14.8 10.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          ),
+        }
+      : null,
+    canEditBaseSettings
+      ? {
+          to: '/nastroyka/person',
+          label: 'Ответственное лицо',
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16 20V18C16 15.7909 14.2091 14 12 14H8C5.79086 14 4 15.7909 4 18V20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M10 10C12.2091 10 14 8.20914 14 6C14 3.79086 12.2091 2 10 2C7.79086 2 6 3.79086 6 6C6 8.20914 7.79086 10 10 10Z" stroke="currentColor" strokeWidth="1.8"/>
+              <path d="M17 10L18.5 11.5L21 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          ),
+        }
+      : null,
+    isAdmin
+      ? {
+          to: '/nastroyka/user',
+          label: 'Пользователи',
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 12C10.2091 12 12 10.2091 12 8C12 5.79086 10.2091 4 8 4C5.79086 4 4 5.79086 4 8C4 10.2091 5.79086 12 8 12Z" stroke="currentColor" strokeWidth="1.8"/>
+              <path d="M2 20C2 16.6863 4.68629 14 8 14C11.3137 14 14 16.6863 14 20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M17 11C18.6569 11 20 9.65685 20 8C20 6.34315 18.6569 5 17 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M17 14C19.2091 14 21 15.7909 21 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+          ),
+        }
+      : null,
+    isAdmin
+      ? {
+          to: '/nastroyka/page-access',
+          label: 'Доступ к страницам',
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="4" y="11" width="16" height="9" rx="2" stroke="currentColor" strokeWidth="1.8"/>
+              <path d="M8 11V8C8 5.79086 9.79086 4 12 4C14.2091 4 16 5.79086 16 8V11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+          ),
+        }
+      : null,
+    canManageFaceIdControl
+      ? {
+          to: '/nastroyka/faceid',
+          label: 'Face ID настройки',
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 10V14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M8 6V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M12 3V21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M16 8V16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <path d="M20 10V14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+          ),
+        }
+      : null,
+  ].filter(Boolean) as Array<{ to: string; label: string; icon: React.ReactNode }>;
   const storedSidebarExpanded = localStorage.getItem('sidebar-expanded');
   const [sidebarExpanded, setSidebarExpanded] = useState(
     storedSidebarExpanded === null ? false : storedSidebarExpanded === 'true'
@@ -46,7 +155,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
     >
       {/* <!-- SIDEBAR HEADER --> */}
       <div className={`flex items-center gap-2 pt-5 ${sidebarOpen ? 'justify-between px-6' : 'justify-center px-2'}`}>
-        <NavLink to="/" className={sidebarOpen ? 'mx-auto' : 'hidden'}>
+        <NavLink to={firstAccessibleRoute} className={sidebarOpen ? 'mx-auto' : 'hidden'}>
           <img src={Logo} alt="Logo" className={sidebarOpen ? 'w-[150px]' : 'w-10'} />
         </NavLink>
 
@@ -85,110 +194,163 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
             </h3>
 
             <ul className="mb-6 flex flex-col gap-1.5">
-              <li>
-                <NavLink
-                  to="/"
-                  className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('calendar') &&
-                    'bg-graydark dark:bg-meta-4'
-                    }`}
-                >
-                  <svg
-                    className="fill-current"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 18 18"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
+              {canSeeDashboard && (
+                <li>
+                  <NavLink
+                    to="/"
+                    className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('calendar') &&
+                      'bg-graydark dark:bg-meta-4'
+                      }`}
                   >
-                    <path
-                      d="M6.10322 0.956299H2.53135C1.5751 0.956299 0.787598 1.7438 0.787598 2.70005V6.27192C0.787598 7.22817 1.5751 8.01567 2.53135 8.01567H6.10322C7.05947 8.01567 7.84697 7.22817 7.84697 6.27192V2.72817C7.8751 1.7438 7.0876 0.956299 6.10322 0.956299ZM6.60947 6.30005C6.60947 6.5813 6.38447 6.8063 6.10322 6.8063H2.53135C2.2501 6.8063 2.0251 6.5813 2.0251 6.30005V2.72817C2.0251 2.44692 2.2501 2.22192 2.53135 2.22192H6.10322C6.38447 2.22192 6.60947 2.44692 6.60947 2.72817V6.30005Z"
-                      fill=""
-                    />
-                    <path
-                      d="M15.4689 0.956299H11.8971C10.9408 0.956299 10.1533 1.7438 10.1533 2.70005V6.27192C10.1533 7.22817 10.9408 8.01567 11.8971 8.01567H15.4689C16.4252 8.01567 17.2127 7.22817 17.2127 6.27192V2.72817C17.2127 1.7438 16.4252 0.956299 15.4689 0.956299ZM15.9752 6.30005C15.9752 6.5813 15.7502 6.8063 15.4689 6.8063H11.8971C11.6158 6.8063 11.3908 6.5813 11.3908 6.30005V2.72817C11.3908 2.44692 11.6158 2.22192 11.8971 2.22192H15.4689C15.7502 2.22192 15.9752 2.44692 15.9752 2.72817V6.30005Z"
-                      fill=""
-                    />
-                    <path
-                      d="M6.10322 9.92822H2.53135C1.5751 9.92822 0.787598 10.7157 0.787598 11.672V15.2438C0.787598 16.2001 1.5751 16.9876 2.53135 16.9876H6.10322C7.05947 16.9876 7.84697 16.2001 7.84697 15.2438V11.7001C7.8751 10.7157 7.0876 9.92822 6.10322 9.92822ZM6.60947 15.272C6.60947 15.5532 6.38447 15.7782 6.10322 15.7782H2.53135C2.2501 15.7782 2.0251 15.5532 2.0251 15.272V11.7001C2.0251 11.4188 2.2501 11.1938 2.53135 11.1938H6.10322C6.38447 11.1938 6.60947 11.4188 6.60947 11.7001V15.272Z"
-                      fill=""
-                    />
-                    <path
-                      d="M15.4689 9.92822H11.8971C10.9408 9.92822 10.1533 10.7157 10.1533 11.672V15.2438C10.1533 16.2001 10.9408 16.9876 11.8971 16.9876H15.4689C16.4252 16.9876 17.2127 16.2001 17.2127 15.2438V11.7001C17.2127 10.7157 16.4252 9.92822 15.4689 9.92822ZM15.9752 15.272C15.9752 15.5532 15.7502 15.7782 15.4689 15.7782H11.8971C11.6158 15.7782 11.3908 15.5532 11.3908 15.272V11.7001C11.3908 11.4188 11.6158 11.1938 11.8971 11.1938H15.4689C15.7502 11.1938 15.9752 11.4188 15.9752 11.7001V15.272Z"
-                      fill=""
-                    />
-                  </svg>
-                  {sidebarOpen && 'Главная страница'}
-                </NavLink>
-              </li>
-              <li>
-                <NavLink
-                  to="/ppe-arrival"
-                  className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('/ppe-arrival') &&
-                    'bg-graydark dark:bg-meta-4'
-                    }`}
-                >
-                  <svg className="fill-current" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M19 9H15V3H9V9H5L12 16L19 9Z" fill=""/>
-                    <path d="M5 18V20H19V18H5Z" fill=""/>
-                  </svg>
-                  {sidebarOpen && 'Прием СИЗ'}
-                </NavLink>
-              </li>
-              <li>
-                <NavLink
-                  to="/statistics"
-                  className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('/statistics') &&
-                    'bg-graydark dark:bg-meta-4'
-                    }`}
-                >
-                  <svg
-                    className="fill-current"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 18 18"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
+                    <svg
+                      className="fill-current"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 18 18"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M6.10322 0.956299H2.53135C1.5751 0.956299 0.787598 1.7438 0.787598 2.70005V6.27192C0.787598 7.22817 1.5751 8.01567 2.53135 8.01567H6.10322C7.05947 8.01567 7.84697 7.22817 7.84697 6.27192V2.72817C7.8751 1.7438 7.0876 0.956299 6.10322 0.956299ZM6.60947 6.30005C6.60947 6.5813 6.38447 6.8063 6.10322 6.8063H2.53135C2.2501 6.8063 2.0251 6.5813 2.0251 6.30005V2.72817C2.0251 2.44692 2.2501 2.22192 2.53135 2.22192H6.10322C6.38447 2.22192 6.60947 2.44692 6.60947 2.72817V6.30005Z"
+                        fill=""
+                      />
+                      <path
+                        d="M15.4689 0.956299H11.8971C10.9408 0.956299 10.1533 1.7438 10.1533 2.70005V6.27192C10.1533 7.22817 10.9408 8.01567 11.8971 8.01567H15.4689C16.4252 8.01567 17.2127 7.22817 17.2127 6.27192V2.72817C17.2127 1.7438 16.4252 0.956299 15.4689 0.956299ZM15.9752 6.30005C15.9752 6.5813 15.7502 6.8063 15.4689 6.8063H11.8971C11.6158 6.8063 11.3908 6.5813 11.3908 6.30005V2.72817C11.3908 2.44692 11.6158 2.22192 11.8971 2.22192H15.4689C15.7502 2.22192 15.9752 2.44692 15.9752 2.72817V6.30005Z"
+                        fill=""
+                      />
+                      <path
+                        d="M6.10322 9.92822H2.53135C1.5751 9.92822 0.787598 10.7157 0.787598 11.672V15.2438C0.787598 16.2001 1.5751 16.9876 2.53135 16.9876H6.10322C7.05947 16.9876 7.84697 16.2001 7.84697 15.2438V11.7001C7.8751 10.7157 7.0876 9.92822 6.10322 9.92822ZM6.60947 15.272C6.60947 15.5532 6.38447 15.7782 6.10322 15.7782H2.53135C2.2501 15.7782 2.0251 15.5532 2.0251 15.272V11.7001C2.0251 11.4188 2.2501 11.1938 2.53135 11.1938H6.10322C6.38447 11.1938 6.60947 11.4188 6.60947 11.7001V15.272Z"
+                        fill=""
+                      />
+                      <path
+                        d="M15.4689 9.92822H11.8971C10.9408 9.92822 10.1533 10.7157 10.1533 11.672V15.2438C10.1533 16.2001 10.9408 16.9876 11.8971 16.9876H15.4689C16.4252 16.9876 17.2127 16.2001 17.2127 15.2438V11.7001C17.2127 10.7157 16.4252 9.92822 15.4689 9.92822ZM15.9752 15.272C15.9752 15.5532 15.7502 15.7782 15.4689 15.7782H11.8971C11.6158 15.7782 11.3908 15.5532 11.3908 15.272V11.7001C11.3908 11.4188 11.6158 11.1938 11.8971 11.1938H15.4689C15.7502 11.1938 15.9752 11.4188 15.9752 11.7001V15.272Z"
+                        fill=""
+                      />
+                    </svg>
+                    {sidebarOpen && 'Главная страница'}
+                  </NavLink>
+                </li>
+              )}
+              {canSeePPEArrival && (
+                <li>
+                  <NavLink
+                    to="/ppe-arrival"
+                    className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('/ppe-arrival') &&
+                      'bg-graydark dark:bg-meta-4'
+                      }`}
                   >
-                    <path
-                      d="M2.25 15.75C1.83579 15.75 1.5 15.4142 1.5 15V3C1.5 2.58579 1.83579 2.25 2.25 2.25C2.66421 2.25 3 2.58579 3 3V15C3 15.4142 2.66421 15.75 2.25 15.75Z"
-                      fill=""
-                    />
-                    <path
-                      d="M7.125 15.75C6.71079 15.75 6.375 15.4142 6.375 15V9C6.375 8.58579 6.71079 8.25 7.125 8.25C7.53921 8.25 7.875 8.58579 7.875 9V15C7.875 15.4142 7.53921 15.75 7.125 15.75Z"
-                      fill=""
-                    />
-                    <path
-                      d="M12 15.75C11.5858 15.75 11.25 15.4142 11.25 15V6C11.25 5.58579 11.5858 5.25 12 5.25C12.4142 5.25 12.75 5.58579 12.75 6V15C12.75 15.4142 12.4142 15.75 12 15.75Z"
-                      fill=""
-                    />
-                    <path
-                      d="M16.875 15.75C16.4608 15.75 16.125 15.4142 16.125 15V11.25C16.125 10.8358 16.4608 10.5 16.875 10.5C17.2892 10.5 17.625 10.8358 17.625 11.25V15C17.625 15.4142 17.2892 15.75 16.875 15.75Z"
-                      fill=""
-                    />
-                  </svg>
-                  {sidebarOpen && 'Статистика'}
-                </NavLink>
-              </li>
-              <li>
-                <NavLink
-                  to="/nastroyka"
-                  className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('/nastroyka') &&
-                    'bg-graydark dark:bg-meta-4'
-                    }`}
-                >
-                  <svg
-                    className="fill-current"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
+                    <svg className="fill-current" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M19 9H15V3H9V9H5L12 16L19 9Z" fill=""/>
+                      <path d="M5 18V20H19V18H5Z" fill=""/>
+                    </svg>
+                    {sidebarOpen && 'Прием СИЗ'}
+                  </NavLink>
+                </li>
+              )}
+              {canSeeStatistics && (
+                <li>
+                  <NavLink
+                    to="/statistics"
+                    className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${pathname.includes('/statistics') &&
+                      'bg-graydark dark:bg-meta-4'
+                      }`}
                   >
-                    <path d="M19.14 12.94c.04-.31.06-.62.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.22 7.22 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.62-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.31.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.22.09.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z" fill=""/>
-                  </svg>
-                  {sidebarOpen && 'Настройки'}
-                </NavLink>
-              </li>
+                    <svg
+                      className="fill-current"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 18 18"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M2.25 15.75C1.83579 15.75 1.5 15.4142 1.5 15V3C1.5 2.58579 1.83579 2.25 2.25 2.25C2.66421 2.25 3 2.58579 3 3V15C3 15.4142 2.66421 15.75 2.25 15.75Z"
+                        fill=""
+                      />
+                      <path
+                        d="M7.125 15.75C6.71079 15.75 6.375 15.4142 6.375 15V9C6.375 8.58579 6.71079 8.25 7.125 8.25C7.53921 8.25 7.875 8.58579 7.875 9V15C7.875 15.4142 7.53921 15.75 7.125 15.75Z"
+                        fill=""
+                      />
+                      <path
+                        d="M12 15.75C11.5858 15.75 11.25 15.4142 11.25 15V6C11.25 5.58579 11.5858 5.25 12 5.25C12.4142 5.25 12.75 5.58579 12.75 6V15C12.75 15.4142 12.4142 15.75 12 15.75Z"
+                        fill=""
+                      />
+                      <path
+                        d="M16.875 15.75C16.4608 15.75 16.125 15.4142 16.125 15V11.25C16.125 10.8358 16.4608 10.5 16.875 10.5C17.2892 10.5 17.625 10.8358 17.625 11.25V15C17.625 15.4142 17.2892 15.75 16.875 15.75Z"
+                        fill=""
+                      />
+                    </svg>
+                    {sidebarOpen && 'Статистика'}
+                  </NavLink>
+                </li>
+              )}
+              {canSeeSettings && settingsMenuItems.length > 0 && (
+                <SidebarLinkGroup activeCondition={isSettingsRoute}>
+                  {(handleClick, open) => {
+                    return (
+                      <React.Fragment>
+                        <NavLink
+                          to="#"
+                          className={`group relative flex items-center rounded-sm py-2 font-medium text-bodydark1 duration-300 ease-in-out hover:bg-graydark dark:hover:bg-meta-4 ${sidebarOpen ? 'gap-2.5 px-4 justify-start' : 'justify-center px-2'} ${isSettingsRoute && 'bg-graydark dark:bg-meta-4'}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            sidebarExpanded ? handleClick() : setSidebarExpanded(true);
+                          }}
+                        >
+                          <svg
+                            className="fill-current"
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path d="M19.14 12.94c.04-.31.06-.62.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.22 7.22 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.62-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.31.6.22l2.39-.96c.51.4 1.05.71 1.63.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96c.22.09.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z" fill=""/>
+                          </svg>
+                          {sidebarOpen && 'Настройки'}
+                          {sidebarOpen && (
+                            <svg
+                              className={`absolute right-4 top-1/2 -translate-y-1/2 fill-current ${open && 'rotate-180'}`}
+                              width="20"
+                              height="20"
+                              viewBox="0 0 20 20"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                clipRule="evenodd"
+                                d="M4.41107 6.9107C4.73651 6.58527 5.26414 6.58527 5.58958 6.9107L10.0003 11.3214L14.4111 6.91071C14.7365 6.58527 15.2641 6.58527 15.5896 6.91071C15.915 7.23614 15.915 7.76378 15.5896 8.08922L10.5896 13.0892C10.2641 13.4147 9.73651 13.4147 9.41107 13.0892L4.41107 8.08922C4.08563 7.76378 4.08563 7.23614 4.41107 6.9107Z"
+                                fill=""
+                              />
+                            </svg>
+                          )}
+                        </NavLink>
+                        <div className={`translate transform overflow-hidden ${(!open || !sidebarOpen) && 'hidden'}`}>
+                          <ul className="mt-4 mb-5.5 flex flex-col gap-2.5 pl-6">
+                            {settingsMenuItems.map((item) => (
+                              <li key={item.to}>
+                                <NavLink
+                                  to={item.to}
+                                  className={({ isActive }) =>
+                                    'group relative flex items-center gap-2.5 rounded-md px-4 font-medium text-bodydark2 duration-300 ease-in-out hover:text-white ' +
+                                    (isActive ? '!text-white' : '')
+                                  }
+                                >
+                                  <span className="flex h-[18px] w-[18px] items-center justify-center text-current">
+                                    {item.icon}
+                                  </span>
+                                  <span>{item.label}</span>
+                                </NavLink>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </React.Fragment>
+                    );
+                  }}
+                </SidebarLinkGroup>
+              )}
               {/* <!-- Menu Item Calendar --> */}
 
 

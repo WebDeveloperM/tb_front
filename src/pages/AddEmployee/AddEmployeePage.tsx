@@ -10,6 +10,7 @@ import { isAuthenticated } from '../../utils/auth';
 import axioss from '../../api/axios';
 import { BASE_URL } from '../../utils/urls';
 import { ModalDataInput } from '../../components/Input/ModalDataInput';
+import { getStoredFeatureAccess, normalizeRole } from '../../utils/pageAccess';
 
 type DepartmentOption = {
   id: number;
@@ -67,8 +68,8 @@ const toCalendarDate = (value?: string) => {
 
 const AddEmployeePage = () => {
   const navigate = useNavigate();
-  const role = localStorage.getItem('role') || 'user';
-  const canEdit = role === 'admin' || role === 'warehouse_manager';
+  const role = normalizeRole(localStorage.getItem('role'));
+  const canEdit = getStoredFeatureAccess(role).dashboard_add_employee;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

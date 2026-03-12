@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx-js-style';
 import { toast } from 'react-toastify';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
+import { getStoredFeatureAccess, normalizeRole } from '../../utils/pageAccess';
 
 (pdfMake as any).vfs = (pdfFonts as any)?.pdfMake?.vfs || (pdfFonts as any)?.vfs;
 
@@ -73,6 +74,7 @@ type ItemDetail = {
         slug?: string | null;
         image?: string | null;
         signature_image?: string | null;
+        warehouse_signature_image?: string | null;
         issued_at?: string | null;
         next_due_date?: string | null;
         is_current?: boolean;
@@ -98,10 +100,20 @@ export default function ViewPO() {
     const issuedFromInputRef = useRef<HTMLInputElement | null>(null);
     const issuedToInputRef = useRef<HTMLInputElement | null>(null);
     const { slug } = useParams();
-    const role = localStorage.getItem('role') || 'user';
-    const canAddItem = role === 'admin' || role === 'warehouse_manager';
+    const role = normalizeRole(localStorage.getItem('role'));
+    const canViewEmployeePPETab = getStoredFeatureAccess(role).employee_ppe_tab;
+    const canExportExcel = getStoredFeatureAccess(role).dashboard_export_excel;
+    const canAddItem = role === 'admin' || role === 'warehouse_staff';
 
     const [pendingIssue, setPendingIssue] = useState<{ id: number; timeRemainingSeconds: number } | null>(null);
+
+    if (!canViewEmployeePPETab) {
+        return (
+            <div className="rounded border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-300">
+                Нет доступа к разделу "Средства защиты".
+            </div>
+        );
+    }
 
     const resolveImageUrl = (value?: string | null) => {
         if (!value) return '';
@@ -125,7 +137,7 @@ export default function ViewPO() {
         if (!issuedAt || renewalMonths === undefined || renewalMonths === null) return '-';
         const date = new Date(issuedAt);
         if (Number.isNaN(date.getTime())) return '-';
-        date.setMonth(date.getMonth() + renewalMonths);
+        date.setMonth(date.getMonth() + renewalMonths - 1);
         return formatDate(date.toISOString());
     };
 
@@ -446,7 +458,7 @@ export default function ViewPO() {
                     String(product.name || '-'),
                     String(product.type_product || '-'),
                     issuedCount > 0 ? String(issuedCount) : '-',
-                    `${String(product.renewal_months ?? '-') } oy`,
+                    `${String(product.renewal_months ?? '-')} oy`,
                 ];
             });
 
@@ -662,6 +674,7 @@ export default function ViewPO() {
                 <th className="px-4 py-3">Следующая выдача</th>
                 <th className="px-4 py-3">Face ID</th>
                 <th className="px-4 py-3">Подписано</th>
+                <th className="px-4 py-3">Подтверждено</th>
             </tr>
         </thead>
     );
@@ -792,16 +805,18 @@ export default function ViewPO() {
                                     <FaFilePdf className="text-lg" />
                                 )}
                             </button>
-                            <button
-                                type="button"
-                                onClick={exportFilteredHistoryToExcel}
-                                disabled={displayedHistoryGroups.length === 0}
-                                className="rounded bg-meta-3 px-3 py-2 text-sm font-medium text-white hover:bg-opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                                title="Скачать Excel"
-                                aria-label="Скачать Excel"
-                            >
-                                <FaFileExcel className="text-lg" />
-                            </button>
+                            {canExportExcel && (
+                                <button
+                                    type="button"
+                                    onClick={exportFilteredHistoryToExcel}
+                                    disabled={displayedHistoryGroups.length === 0}
+                                    className="rounded bg-meta-3 px-3 py-2 text-sm font-medium text-white hover:bg-opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                    title="Скачать Excel"
+                                    aria-label="Скачать Excel"
+                                >
+                                    <FaFileExcel className="text-lg" />
+                                </button>
+                            )}
                             {canAddItem ? (
                                 <Link
                                     to={slug ? `/add-item/${slug}` : '/'}
@@ -819,7 +834,7 @@ export default function ViewPO() {
                             <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900/50 dark:bg-red-950/20">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div className="text-sm font-medium text-red-700 dark:text-red-300">
-                                        Imzolash kutilmoqda
+                                        Подпись ожидается
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className="font-semibold text-red-700 dark:text-red-300">
@@ -937,6 +952,10 @@ export default function ViewPO() {
                                         </div>
                                         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
                                             <span>Дата выдачи: {formatDate(issue.issued_at)}</span>
+                                            <span>Выдал: </span>
+                                            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                                {issue.issued_by_info?.full_name }
+                                            </div>
                                             {issue.is_current ? (
                                                 <span className="px-2 py-1 rounded bg-meta-3/15 text-meta-3 font-medium">
                                                     Новая выдача
@@ -947,6 +966,7 @@ export default function ViewPO() {
                                                     <span className="font-semibold text-emerald-700">
                                                         {formatCountdown(pendingIssue.timeRemainingSeconds)}
                                                     </span>
+                                                    
                                                     <Link
                                                         to={`/signature/${pendingIssue.id}`}
                                                         className="rounded  px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 bg-red-600 hover:bg-red-700"
@@ -1019,6 +1039,35 @@ export default function ViewPO() {
                                                                                 }
                                                                             />
                                                                             <div className="text-[11px] text-slate-500 dark:text-slate-300">
+                                                                                Проверено: {formatDate(issue.issued_at)}
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-xs text-slate-400">-</span>
+                                                                    )}
+                                                                </td>
+                                                                <td
+                                                                    className="px-4 py-3 align-top"
+                                                                    rowSpan={Math.max((issue.ppeproduct_info ?? []).length, 1)}
+                                                                >
+                                                                    {issue.issued_by_info ? (
+                                                                        <div className="flex flex-col items-start gap-2">
+
+                                                                            {issue.warehouse_signature_image ? (
+                                                                                <img
+                                                                                    src={resolveImageUrl(issue.warehouse_signature_image)}
+                                                                                    alt="warehouse_signature"
+                                                                                    className="h-12 w-24 rounded border object-contain bg-white cursor-pointer"
+                                                                                    onClick={() =>
+                                                                                        setPreviewImage({
+                                                                                            imageUrl: resolveImageUrl(issue.warehouse_signature_image!),
+                                                                                            issuedAt: issue.issued_at,
+                                                                                        })
+                                                                                    }
+                                                                                />
+                                                                            ) : null}
+                                                                       
+                                                                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
                                                                                 Проверено: {formatDate(issue.issued_at)}
                                                                             </div>
                                                                         </div>

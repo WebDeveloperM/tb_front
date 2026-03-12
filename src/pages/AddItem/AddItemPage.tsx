@@ -42,6 +42,7 @@ type AddItemResponse = {
       position?: string;
       department?: { name?: string };
       section?: { name?: string };
+      requires_face_id_checkout?: boolean;
     };
     ppeproduct_info?: Array<{ id: number; size?: string }>;
     issued_at?: string | null;
@@ -82,7 +83,7 @@ const AddItemPage = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
   const role = localStorage.getItem('role') || 'user';
-  const canAddItem = role === 'admin' || role === 'warehouse_manager';
+  const canAddItem = role === 'admin' || role === 'warehouse_staff';
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -610,7 +611,10 @@ const AddItemPage = () => {
     }
   };
 
-  const canSubmit = useMemo(() => selectedPpeIds.length > 0 && faceVerified, [selectedPpeIds, faceVerified]);
+  // Determine if requirement Face ID verification: skip if employee not required
+  const requiresFaceId = employee?.requires_face_id_checkout !== false;
+
+  const canSubmit = useMemo(() => selectedPpeIds.length > 0 && (!requiresFaceId || faceVerified), [selectedPpeIds, faceVerified, requiresFaceId]);
 
   const hasUnavailableSize = useMemo(() => {
     return selectedPpeIds.some((id) => {
@@ -643,7 +647,8 @@ const AddItemPage = () => {
   }, [selectedPpeIds, ppeSizes]);
 
   const canSubmitWithStock = canSubmit && !hasUnavailableSize && !hasPendingSizeCheck && !hasMissingSize;
-  const productsLocked = !faceVerified;
+  
+  const productsLocked = requiresFaceId && !faceVerified;
 
   useEffect(() => {
     const targets = selectedPpeIds
@@ -870,6 +875,7 @@ const AddItemPage = () => {
                   <div className="mb-6">
                     <label className="mb-3 block">Средства защиты</label>
 
+                    {requiresFaceId && (
                     <div className="mb-4 rounded border p-3">
                       <div className="mb-2 font-medium">Подтверждение сотрудника (камера)</div>
                       <p className="mb-3 text-sm text-gray-600">
@@ -1005,6 +1011,7 @@ const AddItemPage = () => {
                         </div>
                       )}
                     </div>
+                    )}
 
                     <div
                       className={`mb-4 rounded border px-4 py-3 text-sm ${

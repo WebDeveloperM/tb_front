@@ -5,11 +5,14 @@ import { Tabs } from 'flowbite-react';
 import ViewCompyuter from "./ViewCompyuter.tsx";
 import ViewPO from "./ViewPO.tsx";
 import {FaLongArrowAltLeft} from "react-icons/fa";
+import { getStoredFeatureAccess, normalizeRole } from '../../utils/pageAccess';
 
 
 
 const PageCompyuter = () => {
       const { slug } = useParams()
+  const role = normalizeRole(localStorage.getItem('role'));
+  const canViewEmployeePPETab = getStoredFeatureAccess(role).employee_ppe_tab;
 
 
   const customTheme = {
@@ -42,9 +45,11 @@ const PageCompyuter = () => {
                 <Tabs.Item active title="Персональные данные">
                   <ViewCompyuter />
                 </Tabs.Item>
-                <Tabs.Item title="Средства защиты">
-                  <ViewPO />
-                </Tabs.Item>
+                {canViewEmployeePPETab && (
+                  <Tabs.Item title="Средства защиты">
+                    <ViewPO />
+                  </Tabs.Item>
+                )}
               </Tabs>
             </div>
             <div className="flex justify-between border-b border-stroke py-4 px-6.5 dark:border-strokedark">

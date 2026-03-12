@@ -4,9 +4,11 @@ import axioss from '../../api/axios';
 import { BASE_URL } from '../../utils/urls';
 import { toast } from 'react-toastify';
 import { FaRegCalendarAlt } from 'react-icons/fa';
+import { FiFilter } from 'react-icons/fi';
 import * as XLSX from 'xlsx-js-style';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { getStoredFeatureAccess, normalizeRole } from '../../utils/pageAccess';
 
 type ProductOption = {
   id: number;
@@ -124,6 +126,11 @@ const DateInput = forwardRef<HTMLInputElement, { value?: string; onClick?: () =>
 DateInput.displayName = 'DateInput';
 
 const PPEArrivalPage = () => {
+  const currentRole = normalizeRole(localStorage.getItem('role'));
+  const featureAccess = getStoredFeatureAccess(currentRole);
+  const canReceiveToWarehouse = featureAccess.ppe_arrival_intake;
+  const canExportExcel = featureAccess.dashboard_export_excel;
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -137,6 +144,9 @@ const PPEArrivalPage = () => {
   const [filterToDate, setFilterToDate] = useState<Date | null>(null);
   const [arrivalProductFilterId, setArrivalProductFilterId] = useState<number | ''>('');
   const [arrivalSizeFilter, setArrivalSizeFilter] = useState('');
+
+  // Show/hide filters state (like Statistics page)
+  const [showFilters, setShowFilters] = useState(false);
 
   const parsedSizeBreakdown = useMemo(() => {
     const parsed: Record<string, number> = {};
@@ -445,8 +455,11 @@ const PPEArrivalPage = () => {
       <Breadcrumb pageName="Прием СИЗ" />
 
       <div className="rounded-sm border border-stroke bg-white p-5 shadow-default dark:border-strokedark dark:bg-boxdark">
-        <h2 className="mb-4 text-lg font-semibold">Прием поступивших СИЗ на склад</h2>
+        {canReceiveToWarehouse && (
+          <h2 className="mb-4 text-lg font-semibold">Прием поступивших СИЗ на склад</h2>
+        )}
 
+      {canReceiveToWarehouse && (
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
   {/* Chap tomondagi inputlar */}
   <div className="flex w-full flex-wrap gap-3 md:w-auto md:flex-nowrap">
@@ -581,86 +594,142 @@ const PPEArrivalPage = () => {
     )}
   </div>
 </div>
+      )}
 
 
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!canSave || saving}
-            className="rounded bg-meta-3 px-4 py-2 font-medium text-white hover:bg-opacity-90 disabled:opacity-50"
-          >
-            {saving ? 'Сохранение...' : 'Принять на склад'}
-          </button>
-          <button
-            type="button"
-            onClick={exportArrivalsToExcel}
-            disabled={filteredArrivals.length === 0 || isExporting}
-            title="Скачать Excel"
-            className={`ml-auto flex h-10 w-12 items-center justify-center rounded-md transition-colors duration-200 ${
-              isExporting
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-green-600 hover:bg-green-700'
-            } text-white disabled:cursor-not-allowed disabled:opacity-50`}
-          >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              {/* Green background */}
-              <rect x="2" y="2" width="20" height="20" rx="4" fill="#217346" />
-              {/* White document */}
-              <path
-                d="M9 6.5C8.44772 6.5 8 6.94772 8 7.5V16.5C8 17.0523 8.44772 17.5 9 17.5H15C15.5523 17.5 16 17.0523 16 16.5V10L12.5 6.5H9Z"
-                fill="white"
-              />
-              {/* Document fold */}
-              <path d="M12.5 6.5L16 10H13.25C12.6977 10 12.25 9.55228 12.25 9V6.5H12.5Z" fill="#e6f2e8" />
-              {/* X inside document */}
-              <path
-                d="M10.4 14.2L11.6 13L10.4 11.8C10.1828 11.5828 10.1828 11.2314 10.4 11.0142C10.6172 10.797 10.9686 10.797 11.1858 11.0142L12.4 12.2284L13.6142 11.0142C13.8314 10.797 14.1828 10.797 14.4 11.0142C14.6172 11.2314 14.6172 11.5828 14.4 11.8L13.2 13L14.4 14.2C14.6172 14.4172 14.6172 14.7686 14.4 14.9858C14.1828 15.203 13.8314 15.203 13.6142 14.9858L12.4 13.7716L11.1858 14.9858C10.9686 15.203 10.6172 15.203 10.4 14.9858C10.1828 14.7686 10.1828 14.4172 10.4 14.2Z"
-                fill="#217346"
-              />
-            </svg>
-          </button>
-        </div>
-
-        <div className="mb-4 flex w-full flex-wrap gap-3 md:w-1/2 md:flex-nowrap">
-          <div className="w-full md:flex-1">
-            <select
-              value={arrivalProductFilterId}
-              onChange={(event) =>
-                setArrivalProductFilterId(event.target.value ? Number(event.target.value) : '')
-              }
-              className="h-[42px] w-full rounded border border-stroke bg-white px-3 text-base text-slate-700"
+          {canReceiveToWarehouse && (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!canSave || saving}
+              className="rounded bg-meta-3 px-4 py-2 font-medium text-white hover:bg-opacity-90 disabled:opacity-50"
             >
-              <option value="">Все средства защиты</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {product.name}
-                </option>
-              ))}
-            </select>
-          </div>
+              {saving ? 'Сохранение...' : 'Принять на склад'}
+            </button>
+          )}
+        </div>
 
-          <div className="w-full md:flex-1">
-            <input
-              type="text"
-              value={arrivalSizeFilter}
-              onChange={(event) => setArrivalSizeFilter(event.target.value)}
-              placeholder="Фильтр по размеру"
-              className="h-[42px] w-full rounded border border-stroke bg-white px-3 text-base text-slate-700"
-            />
-          </div>
-
+        <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
+          {/* Right side: Filter toggle button */}
           <button
             type="button"
-            onClick={() => {
-              setArrivalProductFilterId('');
-              setArrivalSizeFilter('');
-            }}
-            className="h-[42px] rounded border border-stroke bg-white px-6 text-base text-slate-700 hover:bg-slate-50"
+            onClick={() => setShowFilters(!showFilters)}
+            className={`inline-flex items-center gap-2 rounded border border-stroke px-4 py-2 text-sm font-medium transition-colors ${
+              showFilters
+                ? 'bg-primary text-white hover:bg-primary/90 dark:bg-primary dark:text-white'
+                : 'bg-white text-slate-700 hover:bg-slate-50 dark:border-strokedark dark:bg-boxdark dark:text-slate-300'
+            }`}
           >
-            Сбросить
+            <FiFilter size={16} />
+            Фильтр
           </button>
+
+          {/* Right side: Excel export button */}
+          {canExportExcel && (
+            <button
+              type="button"
+              onClick={exportArrivalsToExcel}
+              disabled={filteredArrivals.length === 0 || isExporting}
+              title="Скачать Excel"
+              className={`flex h-10 w-12 items-center justify-center rounded-md transition-colors duration-200 ${
+                isExporting
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-700'
+              } text-white disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="2" width="20" height="20" rx="4" fill="#217346" />
+                <path
+                  d="M9 6.5C8.44772 6.5 8 6.94772 8 7.5V16.5C8 17.0523 8.44772 17.5 9 17.5H15C15.5523 17.5 16 17.0523 16 16.5V10L12.5 6.5H9Z"
+                  fill="white"
+                />
+                <path d="M12.5 6.5L16 10H13.25C12.6977 10 12.25 9.55228 12.25 9V6.5H12.5Z" fill="#e6f2e8" />
+                <path
+                  d="M10.4 14.2L11.6 13L10.4 11.8C10.1828 11.5828 10.1828 11.2314 10.4 11.0142C10.6172 10.797 10.9686 10.797 11.1858 11.0142L12.4 12.2284L13.6142 11.0142C13.8314 10.797 14.1828 10.797 14.4 11.0142C14.6172 11.2314 14.6172 11.5828 14.4 11.8L13.2 13L14.4 14.2C14.6172 14.4172 14.6172 14.7686 14.4 14.9858C14.1828 15.203 13.8314 15.203 13.6142 14.9858L12.4 13.7716L11.1858 14.9858C10.9686 15.203 10.6172 15.203 10.4 14.9858C10.1828 14.7686 10.1828 14.4172 10.4 14.2Z"
+                  fill="#217346"
+                />
+              </svg>
+            </button>
+          )}
         </div>
+
+        {/* Filter inputs - collapsible like Statistics page */}
+        {showFilters && (
+          <div className="mb-4 flex w-full flex-wrap items-end gap-3">
+            {/* Left side: Date filters and Сбросить */}
+            <div className="flex w-full flex-wrap items-end gap-3 md:w-auto md:flex-nowrap">
+              <div className="w-full md:w-48">
+                <label className="mb-1 block text-sm font-medium">С даты</label>
+                <DatePicker
+                  selected={filterFromDate}
+                  onChange={(date: Date | null) => setFilterFromDate(date)}
+                  dateFormat="dd.MM.yyyy"
+                  customInput={<DateInput className="h-[42px] w-full rounded border border-stroke bg-white px-3 text-base text-slate-700" />}
+                  isClearable
+                  placeholderText="дд.мм.гггг"
+                />
+              </div>
+
+              <div className="w-full md:w-48">
+                <label className="mb-1 block text-sm font-medium">По дату</label>
+                <DatePicker
+                  selected={filterToDate}
+                  onChange={(date: Date | null) => setFilterToDate(date)}
+                  dateFormat="dd.MM.yyyy"
+                  customInput={<DateInput className="h-[42px] w-full rounded border border-stroke bg-white px-3 text-base text-slate-700" />}
+                  isClearable
+                  placeholderText="дд.мм.гггг"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setArrivalProductFilterId('');
+                  setArrivalSizeFilter('');
+                  setFilterFromDate(null);
+                  setFilterToDate(null);
+                }}
+                className="h-[42px] rounded border border-stroke bg-white px-6 text-base text-slate-700 hover:bg-slate-50"
+              >
+                Сбросить
+              </button>
+            </div>
+
+            {/* Right side: Product and Size filters */}
+            <div className="ml-auto flex w-full flex-wrap items-end gap-3 md:w-auto md:flex-nowrap">
+              <div className="w-full md:w-64">
+                <label className="mb-1 block text-sm font-medium">Средство защиты</label>
+                <select
+                  value={arrivalProductFilterId}
+                  onChange={(event) =>
+                    setArrivalProductFilterId(event.target.value ? Number(event.target.value) : '')
+                  }
+                  className="h-[42px] w-full rounded border border-stroke bg-white px-3 text-base text-slate-700"
+                >
+                  <option value="">Все средства защиты</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="w-full md:w-48">
+                <label className="mb-1 block text-sm font-medium">Размер</label>
+                <input
+                  type="text"
+                  value={arrivalSizeFilter}
+                  onChange={(event) => setArrivalSizeFilter(event.target.value)}
+                  placeholder="Фильтр по размеру"
+                  className="h-[42px] w-full rounded border border-stroke bg-white px-3 text-base text-slate-700"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {groupedArrivals.length > 0 ? (
           <div className="space-y-3">
